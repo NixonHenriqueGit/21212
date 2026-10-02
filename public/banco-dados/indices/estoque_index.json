@@ -1,0 +1,13 @@
+{
+  "entidade": "estoque",
+  "ultimaAtualizacao": "2026-08-17T06:30:00Z",
+  "registrosDisponiveis": [
+    {
+      "data": "2026-08-17",
+      "caminho": "/banco-dados/historico/2026/08/17/estoque.json",
+      "totalItens": 12,
+      "taxaOcupacao": 84.88
+    }
+  ],
+  "atalhoHoje": "/banco-dados/hoje/estoque.json"
+}

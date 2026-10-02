@@ -1,0 +1,21 @@
+{
+  "versao": "1.0.0",
+  "dataCriacao": "2026-08-17T06:40:00Z",
+  "descricao": "Índice mestre do Banco de Dados Operacional e Histórico",
+  "entidades": [
+    "estoque",
+    "picking",
+    "pedidos",
+    "validade",
+    "temperatura",
+    "desvios",
+    "dashboard"
+  ],
+  "estrutura": {
+    "hoje": "/banco-dados/hoje/",
+    "historico": "/banco-dados/historico/YYYY/MM/DD/",
+    "indices": "/banco-dados/indices/"
+  },
+  "atualizacaoAutomatica": true,
+  "status": "ativo"
+}

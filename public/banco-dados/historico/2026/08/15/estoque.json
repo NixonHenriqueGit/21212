@@ -1,0 +1,40 @@
+{
+  "dataReferencia": "2026-08-15",
+  "fechamento": true,
+  "capacidadeTotalPaletes": 4500,
+  "paletesOcupados": 3790,
+  "taxaOcupacaoPercentual": 84.22,
+  "totalCaixasEstoque": 3610,
+  "itens": [
+    {
+      "id": "12345",
+      "codigo": 12345,
+      "descricao": "HEINEKEN 330ML CX24 LN",
+      "categoria": "Premium",
+      "tipoEmbalagem": "Long Neck",
+      "quantidadeCaixas": 520,
+      "quantidadePaletes": 16,
+      "localizacao": "RUA-A-03-N1",
+      "lote": "L260815-01",
+      "validade": "2027-02-15",
+      "status": "normal",
+      "valorUnitario": 129.90,
+      "hlUnitario": 0.0792
+    },
+    {
+      "id": "2101",
+      "codigo": 2101,
+      "descricao": "BRAHMA CHOPP 350ML CX24",
+      "categoria": "Cervejas",
+      "tipoEmbalagem": "Lata 350ml",
+      "quantidadeCaixas": 420,
+      "quantidadePaletes": 14,
+      "localizacao": "RUA-A-01-N1",
+      "lote": "L260810-01",
+      "validade": "2027-02-15",
+      "status": "normal",
+      "valorUnitario": 78.50,
+      "hlUnitario": 0.084
+    }
+  ]
+}

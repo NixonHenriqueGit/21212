@@ -1,0 +1,45 @@
+{
+  "versao": "1.0.0",
+  "descricao": "Catálogo de todos os índices estruturados do banco de dados",
+  "indiceMestreEntidades": "/banco-dados/indices/index_entities.json",
+  "ultimaAtualizacao": "2026-09-22T12:25:36.149Z",
+  "indices": [
+    {
+      "entidade": "todas",
+      "tipo": "particionamento_por_id",
+      "arquivo": "/banco-dados/indices/index_entities.json"
+    },
+    {
+      "entidade": "estoque",
+      "arquivo": "/banco-dados/indices/estoque_index.json"
+    },
+    {
+      "entidade": "picking",
+      "arquivo": "/banco-dados/indices/picking_index.json"
+    },
+    {
+      "entidade": "pedidos",
+      "arquivo": "/banco-dados/indices/pedidos_index.json"
+    },
+    {
+      "entidade": "validade",
+      "arquivo": "/banco-dados/indices/validade_index.json"
+    },
+    {
+      "entidade": "temperatura",
+      "arquivo": "/banco-dados/indices/temperatura_index.json"
+    },
+    {
+      "entidade": "desvios",
+      "arquivo": "/banco-dados/indices/desvios_index.json"
+    },
+    {
+      "entidade": "dashboard",
+      "arquivo": "/banco-dados/indices/dashboard_index.json"
+    },
+    {
+      "entidade": "quebras",
+      "arquivo": "/banco-dados/indices/quebras_index.json"
+    }
+  ]
+}

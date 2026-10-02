@@ -1,0 +1,51 @@
+{
+  "dataReferencia": "2026-08-17",
+  "ultimaLeitura": "2026-08-17T06:30:00Z",
+  "statusGeral": "conforme",
+  "sensores": [
+    {
+      "id": "TEMP-CAM-01",
+      "area": "Câmara Fria Chopp (Doca 1)",
+      "temperaturaAtual": 2.4,
+      "umidadeRelativa": 65,
+      "faixaIdealMin": 0.0,
+      "faixaIdealMax": 4.0,
+      "unidade": "°C",
+      "status": "normal",
+      "horarioUltimaMedicao": "06:30"
+    },
+    {
+      "id": "TEMP-CAM-02",
+      "area": "Câmara Fria Especialidades",
+      "temperaturaAtual": 3.1,
+      "umidadeRelativa": 68,
+      "faixaIdealMin": 0.0,
+      "faixaIdealMax": 4.0,
+      "unidade": "°C",
+      "status": "normal",
+      "horarioUltimaMedicao": "06:30"
+    },
+    {
+      "id": "TEMP-GALP-01",
+      "area": "Galpão Principal (Bloco A/B)",
+      "temperaturaAtual": 22.8,
+      "umidadeRelativa": 58,
+      "faixaIdealMin": 15.0,
+      "faixaIdealMax": 26.0,
+      "unidade": "°C",
+      "status": "normal",
+      "horarioUltimaMedicao": "06:30"
+    },
+    {
+      "id": "TEMP-GALP-02",
+      "area": "Galpão Secundário (Bloco C/D)",
+      "temperaturaAtual": 23.5,
+      "umidadeRelativa": 60,
+      "faixaIdealMin": 15.0,
+      "faixaIdealMax": 26.0,
+      "unidade": "°C",
+      "status": "normal",
+      "horarioUltimaMedicao": "06:30"
+    }
+  ]
+}

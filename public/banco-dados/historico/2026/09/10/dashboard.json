@@ -1,0 +1,32 @@
+{
+  "dataReferencia": "2026-09-10",
+  "ultimaAtualizacao": "2026-09-10T19:42:46.965Z",
+  "kpis": {
+    "ocupacaoArmazemPercentual": 84.88,
+    "pedidosFaturadosHoje": 0,
+    "pedidosTotalHoje": 0,
+    "produtividadePickingCxHora": 0,
+    "totalVolumeHlExpedido": 0,
+    "totalValorExpedido": 0,
+    "alertasValidadeAtivos": 0,
+    "desviosPendentes": 0
+  },
+  "resumoSetores": [
+    {
+      "setor": "Armazém / Estoque",
+      "status": "operacional"
+    },
+    {
+      "setor": "Picking & Expedição",
+      "status": "operacional"
+    },
+    {
+      "setor": "Controle FEFO / Validades",
+      "status": "operacional"
+    },
+    {
+      "setor": "Qualidade & Desvios",
+      "status": "operacional"
+    }
+  ]
+}

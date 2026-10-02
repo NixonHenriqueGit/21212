@@ -1,0 +1,13 @@
+{
+  "entidade": "pedidos",
+  "ultimaAtualizacao": "2026-08-17T06:30:00Z",
+  "registrosDisponiveis": [
+    {
+      "data": "2026-08-17",
+      "caminho": "/banco-dados/historico/2026/08/17/pedidos.json",
+      "totalPedidos": 6,
+      "valorTotal": 42890.50
+    }
+  ],
+  "atalhoHoje": "/banco-dados/hoje/pedidos.json"
+}

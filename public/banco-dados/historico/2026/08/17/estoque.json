@@ -1,0 +1,70 @@
+{
+  "dataReferencia": "2026-08-17",
+  "fechamento": true,
+  "capacidadeTotalPaletes": 4500,
+  "paletesOcupados": 3820,
+  "taxaOcupacaoPercentual": 84.88,
+  "totalCaixasEstoque": 3675,
+  "itens": [
+    {
+      "id": "2101",
+      "codigo": 2101,
+      "descricao": "BRAHMA CHOPP 350ML CX24",
+      "categoria": "Cervejas",
+      "tipoEmbalagem": "Lata 350ml",
+      "quantidadeCaixas": 450,
+      "quantidadePaletes": 15,
+      "localizacao": "RUA-A-01-N1",
+      "lote": "L260810-01",
+      "validade": "2027-02-15",
+      "status": "normal",
+      "valorUnitario": 78.50,
+      "hlUnitario": 0.084
+    },
+    {
+      "id": "2102",
+      "codigo": 2102,
+      "descricao": "SKOL LAGER 350ML CX24",
+      "categoria": "Cervejas",
+      "tipoEmbalagem": "Lata 350ml",
+      "quantidadeCaixas": 620,
+      "quantidadePaletes": 20,
+      "localizacao": "RUA-A-02-N1",
+      "lote": "L260805-02",
+      "validade": "2027-02-05",
+      "status": "normal",
+      "valorUnitario": 74.90,
+      "hlUnitario": 0.084
+    },
+    {
+      "id": "2103",
+      "codigo": 2103,
+      "descricao": "STELLA ARTOIS 330ML CX24 LN",
+      "categoria": "Premium",
+      "tipoEmbalagem": "Long Neck",
+      "quantidadeCaixas": 280,
+      "quantidadePaletes": 8,
+      "localizacao": "RUA-B-04-N2",
+      "lote": "L260718-04",
+      "validade": "2027-01-20",
+      "status": "normal",
+      "valorUnitario": 125.00,
+      "hlUnitario": 0.0792
+    },
+    {
+      "id": "2104",
+      "codigo": 2104,
+      "descricao": "CORONA EXTRA 330ML CX24",
+      "categoria": "Premium",
+      "tipoEmbalagem": "Long Neck",
+      "quantidadeCaixas": 340,
+      "quantidadePaletes": 11,
+      "localizacao": "RUA-B-05-N1",
+      "lote": "L260620-03",
+      "validade": "2026-12-15",
+      "status": "normal",
+      "valorUnitario": 139.90,
+      "hlUnitario": 0.0792
+    }
+  ]
+}

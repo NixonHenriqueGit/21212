@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "generatedAt": "2026-08-17T07:35:00Z",
+  "descricao": "Índice de particionamento e localização direta de registros por entidade e identificador",
+  "entities": {
+    "estoque": {
+      "12345": "/banco-dados/historico/2026/08/15/estoque.json",
+      "2101": "/banco-dados/historico/2026/08/17/estoque.json",
+      "2102": "/banco-dados/historico/2026/08/17/estoque.json",
+      "2103": "/banco-dados/historico/2026/08/17/estoque.json",
+      "2104": "/banco-dados/historico/2026/08/17/estoque.json",
+      "2105": "/banco-dados/hoje/estoque.json",
+      "2106": "/banco-dados/hoje/estoque.json",
+      "2107": "/banco-dados/hoje/estoque.json",
+      "2108": "/banco-dados/hoje/estoque.json"
+    },
+    "pedidos": {
+      "PED-901": "/banco-dados/hoje/pedidos.json",
+      "PED-902": "/banco-dados/hoje/pedidos.json",
+      "PED-903": "/banco-dados/hoje/pedidos.json",
+      "PED-904": "/banco-dados/hoje/pedidos.json",
+      "PED-905": "/banco-dados/hoje/pedidos.json",
+      "901": "/banco-dados/hoje/pedidos.json",
+      "902": "/banco-dados/hoje/pedidos.json",
+      "903": "/banco-dados/hoje/pedidos.json",
+      "904": "/banco-dados/hoje/pedidos.json",
+      "905": "/banco-dados/hoje/pedidos.json"
+    },
+    "picking": {
+      "PCK-101": "/banco-dados/hoje/picking.json",
+      "PCK-102": "/banco-dados/hoje/picking.json",
+      "PCK-103": "/banco-dados/hoje/picking.json",
+      "PCK-104": "/banco-dados/hoje/picking.json",
+      "PCK-105": "/banco-dados/hoje/picking.json"
+    },
+    "validade": {
+      "VAL-01": "/banco-dados/hoje/validade.json",
+      "VAL-02": "/banco-dados/hoje/validade.json",
+      "VAL-03": "/banco-dados/hoje/validade.json",
+      "L260810-01": "/banco-dados/hoje/validade.json"
+    },
+    "temperatura": {
+      "TEMP-01": "/banco-dados/hoje/temperatura.json",
+      "TEMP-02": "/banco-dados/hoje/temperatura.json",
+      "TEMP-03": "/banco-dados/hoje/temperatura.json"
+    },
+    "desvios": {
+      "DESV-01": "/banco-dados/hoje/desvios.json",
+      "DESV-02": "/banco-dados/hoje/desvios.json",
+      "DESV-03": "/banco-dados/hoje/desvios.json"
+    }
+  }
+}
