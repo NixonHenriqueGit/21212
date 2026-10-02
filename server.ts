@@ -772,35 +772,18 @@ app.get('/api/validades', async (req, res) => {
       const content = await fs.readFile(VALIDADES_STORAGE_PATH, 'utf-8');
       const parsed = JSON.parse(content);
       const rows = Array.isArray(parsed) ? parsed : (parsed.validades || []);
-      return res.json({ success: true, validades: rows });
+      if (rows.length > 0) {
+        return res.json({ success: true, validades: rows });
+      }
     }
 
-    const validadeFile = path.join(process.cwd(), 'public', 'banco-dados', 'hoje', 'validade.json');
-    if (existsSync(validadeFile)) {
-      const content = await fs.readFile(validadeFile, 'utf-8');
-      const parsed = JSON.parse(content);
-      if (parsed && Array.isArray(parsed.itens)) {
-        const converted = parsed.itens
-          .filter((it: any) => {
-            const vVal = String(it.validade || '').trim();
-            const dCol = String(it.dataColeta || '').trim();
-            return vVal !== '2026-10-02' && vVal !== '02/10/2026' && dCol !== '02/10/2026' && dCol !== '2026-10-02';
-          })
-          .map((it: any) => ({
-            id: it.id,
-            _docId: it.id,
-            codigo: it.codigo,
-            descricao: it.descricao,
-            validade: it.validade,
-            quantidade: it.quantidade,
-            localizacao: it.localizacao || 'central',
-            bloco: it.localizacao === 'picking' ? '' : (it.bloco || ''),
-            dataColeta: it.dataColeta || '28/08/2026',
-            cadastradoEm: '2026-08-28T08:00:00.000Z',
-            empresaId: 'demo'
-          }));
-        return res.json({ success: true, validades: converted });
-      }
+    const sem4Path = path.join(process.cwd(), 'src', 'data', 'validadesRecolhidasSemana4.json');
+    const sem3Path = path.join(process.cwd(), 'src', 'data', 'validadesRecolhidasSemana3.json');
+    if (existsSync(sem4Path) && existsSync(sem3Path)) {
+      const sem4 = JSON.parse(await fs.readFile(sem4Path, 'utf-8'));
+      const sem3 = JSON.parse(await fs.readFile(sem3Path, 'utf-8'));
+      const combined = [...sem4, ...sem3];
+      return res.json({ success: true, validades: combined });
     }
 
     return res.json({ success: true, validades: [] });

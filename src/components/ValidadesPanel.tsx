@@ -483,92 +483,73 @@ export default function ValidadesPanel({ user, empresa, hideSugerirMelhoria, the
     return getAvailableProductsForConferente(empresaId, empresaData.produtos);
   }, [empresaId, empresaData.produtos, catalogTrigger]);
 
-  // Sync with empresaData (scoped to company) - Filter out repack validades
+  // Sync with empresaData (scoped to company) - Filter out repack validades and preserve local additions
   useEffect(() => {
-    // 1. Busca na API compartilhada da nuvem/servidor para sincronizar com registros de outros colaboradores
-    fetch('/api/validades')
-      .then(r => r.json())
-      .then(data => {
-        if (data && data.success && Array.isArray(data.validades) && data.validades.length > 0) {
-          const conferenteRows = removeLegacySeedValidades(data.validades.filter((r: any) => {
-            const loc = String(r.localizacao || '').toLowerCase();
-            const dCol = String(r.dataColeta || '').trim();
-            const vVal = String(r.validade || '').trim();
-            if (loc.includes('repack')) return false;
-            // Exclui especificamente a coleta/validade do dia 02/10/2026 conforme solicitado
-            if (dCol === '02/10/2026' || dCol === '2026-10-02' || vVal === '2026-10-02' || vVal === '02/10/2026') return false;
-            return true;
-          })).map((it: any) => ({
-            ...it,
-            dataColeta: it.dataColeta && it.dataColeta !== '02/10/2026' ? it.dataColeta : '28/08/2026',
-            cadastradoEm: it.cadastradoEm && !it.cadastradoEm.startsWith('2026-10-02') ? it.cadastradoEm : '2026-08-28T08:00:00.000Z'
-          }));
-          if (conferenteRows.length > 0) {
-            setValidadesList(conferenteRows);
-            try {
-              localStorage.setItem(`validades_${empresaId}`, JSON.stringify(conferenteRows));
-              localStorage.setItem(`armazem_validades_${empresaId}`, JSON.stringify(conferenteRows));
-            } catch (e) {}
-            syncValidadesListToMonthlyColetas(conferenteRows, empresaId);
-          }
+    // 1. Carrega dados do localStorage primeiro para manter adições do usuário
+    let baseRows: ValidadeRow[] = [];
+    const saved = localStorage.getItem(`validades_${empresaId}`);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          baseRows = parsed;
         }
-      })
-      .catch(() => {});
-
-    let rows: ValidadeRow[] = empresaData.validades || [];
-    if (rows.length === 0) {
-      const saved = localStorage.getItem(`validades_${empresaId}`);
-      if (saved) {
-        try {
-          rows = JSON.parse(saved);
-        } catch (e) {
-          console.error(e);
-        }
+      } catch (e) {
+        console.error(e);
       }
     }
 
-    // Exclude any repack validades and legacy seed items so this panel ONLY shows conferente validades
-    let conferenteRows = removeLegacySeedValidades(rows.filter((r: any) => {
+    if (baseRows.length === 0 && empresaData.validades && empresaData.validades.length > 0) {
+      baseRows = empresaData.validades;
+    }
+
+    if (baseRows.length === 0) {
+      baseRows = getInitialDefaultValidades(empresaId);
+    }
+
+    const conferenteRows = removeLegacySeedValidades(baseRows.filter((r: any) => {
       const loc = String(r.localizacao || '').toLowerCase();
       const origem = String(r.origem || '').toLowerCase();
       const setor = String(r.setor || '').toLowerCase();
       const tipo = String(r.tipo || '').toLowerCase();
-      const dCol = String(r.dataColeta || '').trim();
-      const vVal = String(r.validade || '').trim();
       if (loc.includes('repack') || origem.includes('repack') || setor.includes('repack') || tipo.includes('repack') || r.isRepack) {
         return false;
       }
-      // Exclui a coleta/validade do dia 02/10/2026
-      if (dCol === '02/10/2026' || dCol === '2026-10-02' || vVal === '2026-10-02' || vVal === '02/10/2026') {
-        return false;
-      }
       return true;
-    })).map((it: any) => ({
-      ...it,
-      dataColeta: it.dataColeta && it.dataColeta !== '02/10/2026' ? it.dataColeta : '28/08/2026',
-      cadastradoEm: it.cadastradoEm && !it.cadastradoEm.startsWith('2026-10-02') ? it.cadastradoEm : '2026-08-28T08:00:00.000Z'
     }));
 
-    if (conferenteRows.length === 0) {
-      conferenteRows = getInitialDefaultValidades(empresaId).filter((r: any) => {
-        const dCol = String(r.dataColeta || '').trim();
-        const vVal = String(r.validade || '').trim();
-        return dCol !== '02/10/2026' && dCol !== '2026-10-02' && vVal !== '2026-10-02' && vVal !== '02/10/2026';
-      }).map((it: any) => ({
-        ...it,
-        dataColeta: it.dataColeta && it.dataColeta !== '02/10/2026' ? it.dataColeta : '28/08/2026',
-        cadastradoEm: it.cadastradoEm && !it.cadastradoEm.startsWith('2026-10-02') ? it.cadastradoEm : '2026-08-28T08:00:00.000Z'
-      }));
-    }
-
+    setValidadesList(conferenteRows);
     try {
       localStorage.setItem(`validades_${empresaId}`, JSON.stringify(conferenteRows));
       localStorage.setItem(`armazem_validades_${empresaId}`, JSON.stringify(conferenteRows));
     } catch (e) {}
 
-    setValidadesList(conferenteRows);
-    syncValidadesListToMonthlyColetas(conferenteRows, empresaId);
-  }, [empresaData.validades, empresaId]);
+    // 2. Busca na API compartilhada da nuvem/servidor e MESCLA preservando adições locais
+    fetch('/api/validades')
+      .then(r => r.json())
+      .then(data => {
+        if (data && data.success && Array.isArray(data.validades) && data.validades.length > 0) {
+          const apiRows = removeLegacySeedValidades(data.validades.filter((r: any) => {
+            const loc = String(r.localizacao || '').toLowerCase();
+            return !loc.includes('repack') && !r.isRepack;
+          }));
+
+          setValidadesList(current => {
+            // Mescla: mantém itens locais que não existem na API por id ou código+lote+validade
+            const apiKeys = new Set(apiRows.map(r => String(r.id || r._docId)));
+            const localOnly = current.filter(r => !apiKeys.has(String(r.id || r._docId)));
+            const merged = [...apiRows, ...localOnly];
+            try {
+              localStorage.setItem(`validades_${empresaId}`, JSON.stringify(merged));
+              localStorage.setItem(`armazem_validades_${empresaId}`, JSON.stringify(merged));
+            } catch (e) {}
+            syncValidadesListToMonthlyColetas(merged, empresaId);
+            return merged;
+          });
+        }
+      })
+      .catch(() => {});
+  }, [empresaId]);
 
   const getDaysRemaining = (expDate: string) => {
     if (!expDate) return 0;
@@ -742,10 +723,12 @@ export default function ValidadesPanel({ user, empresa, hideSugerirMelhoria, the
           });
         }
       } else {
-        // Sobrescrever registro anterior com a mesma combinação: código + localizacao + bloco (rua)
+        // Atualizar registro se for o mesmo produto, mesma validade e mesma localização
         const targetCod = String(dataObj.codigo).trim();
         const targetLoc = String(dataObj.localizacao).toLowerCase();
         const targetRua = String(dataObj.bloco || '').trim().toLowerCase();
+        const targetVal = String(dataObj.validade).trim();
+        const targetLote = String((dataObj as any).lote || '').trim().toLowerCase();
 
         const idsToDel: string[] = [];
         const filteredList = [];
@@ -753,8 +736,14 @@ export default function ValidadesPanel({ user, empresa, hideSugerirMelhoria, the
           const itemCod = String(item.codigo).trim();
           const itemLoc = String(item.localizacao || 'central').toLowerCase();
           const itemRua = String(item.bloco || '').trim().toLowerCase();
+          const itemVal = String(item.validade || '').trim();
+          const itemLote = String(item.lote || '').trim().toLowerCase();
 
-          if (itemCod === targetCod && itemLoc === targetLoc && itemRua === targetRua) {
+          // Só substitui se for a mesma validade ou mesmo lote na mesma posição.
+          // Se for validade diferente (ex: "já tem uma aqui"), mantém AMBAS!
+          const isSameBatch = itemCod === targetCod && itemLoc === targetLoc && itemRua === targetRua && (itemVal === targetVal || (targetLote && itemLote === targetLote));
+
+          if (isSameBatch) {
             const idToDel = item._docId || (item as any).id;
             if (idToDel) {
               idsToDel.push(String(idToDel));
@@ -774,9 +763,13 @@ export default function ValidadesPanel({ user, empresa, hideSugerirMelhoria, the
           cadastradoEm: new Date().toISOString()
         };
 
+        const regKey = getRegDateKey(newRow);
+        setExpandedDates(prev => ({ ...prev, [regKey]: true }));
+
         updatedListAfterSave = [...filteredList, newRow];
         setValidadesList(updatedListAfterSave);
         localStorage.setItem(`validades_${empresaId}`, JSON.stringify(updatedListAfterSave));
+        localStorage.setItem(`armazem_validades_${empresaId}`, JSON.stringify(updatedListAfterSave));
         syncValidadesListToMonthlyColetas(updatedListAfterSave, empresaId);
         toast(`Produto salvo com sucesso na Semana ${semanaNumCalculada} de Agosto!`);
 
@@ -1205,7 +1198,7 @@ export default function ValidadesPanel({ user, empresa, hideSugerirMelhoria, the
 
   // Expiration entries mapping list
   const getFilteredEntries = () => {
-    let rows = filterHistoryForUser(validadesList, user, getRegDateKey);
+    let rows = [...validadesList];
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
@@ -1338,7 +1331,7 @@ export default function ValidadesPanel({ user, empresa, hideSugerirMelhoria, the
             <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-black ${
               activeTab === 'lista' ? 'bg-white/20 text-white' : 'bg-slate-100 dark:bg-[#0e1217] text-slate-800 dark:text-snow border border-slate-300 dark:border-[#222d3a]'
             }`}>
-              {filterHistoryForUser(validadesList, user, getRegDateKey).length}
+              {validadesList.length}
             </span>
           </button>
 
@@ -2119,7 +2112,7 @@ export default function ValidadesPanel({ user, empresa, hideSugerirMelhoria, the
 
                   {sortedRegDateKeys.map(regDateKey => {
                     const rows = grouped[regDateKey];
-                    const isOpen = !!expandedDates[regDateKey];
+                    const isOpen = expandedDates[regDateKey] !== undefined ? !!expandedDates[regDateKey] : (sortedRegDateKeys[0] === regDateKey || sortedRegDateKeys.length === 1);
 
                     let formattedRegDate = regDateKey;
                     try {

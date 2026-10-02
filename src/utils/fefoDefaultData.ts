@@ -4,11 +4,7 @@ import validadesRecolhidasSemana4Data from '../data/validadesRecolhidasSemana4.j
 import { calcularTotalCaixas } from '../data/coletaPackagingData';
 
 export const DEFAULT_OFFICIAL_VALIDADES_WEEK4: ValidadeRow[] = (validadesRecolhidasSemana4Data as ValidadeRow[])
-  .filter(item => {
-    const val = String(item.validade || '').trim();
-    const col = String(item.dataColeta || '').trim();
-    return val !== '2026-10-02' && val !== '02/10/2026' && col !== '02/10/2026' && col !== '2026-10-02' && item.id !== 'val_1166_sem4_7';
-  })
+  .filter(item => item.id !== 'val_1166_sem4_7')
   .map((item, idx) => ({
     ...item,
     id: item.id || `val_${item.codigo}_sem4_${idx + 1}`,
@@ -18,11 +14,7 @@ export const DEFAULT_OFFICIAL_VALIDADES_WEEK4: ValidadeRow[] = (validadesRecolhi
   }));
 
 export const DEFAULT_OFFICIAL_VALIDADES_WEEK3: ValidadeRow[] = (validadesRecolhidasSemana3Data as ValidadeRow[])
-  .filter(item => {
-    const val = String(item.validade || '').trim();
-    const col = String(item.dataColeta || '').trim();
-    return val !== '2026-10-02' && val !== '02/10/2026' && col !== '02/10/2026' && col !== '2026-10-02' && item.id !== 'val_1166_sem3_7';
-  })
+  .filter(item => item.id !== 'val_1166_sem3_7')
   .map((item, idx) => ({
     ...item,
     id: item.id || `val_${item.codigo}_sem3_${idx + 1}`,
@@ -131,11 +123,8 @@ export function matchValidade(item: any, target: { codigo?: string; validade?: s
 
 export function isValidadeDeleted(item: any, companyId: string = 'demo'): boolean {
   if (!item) return false;
-  const val = String(item.validade || '').trim();
-  const valBr = formatDateToBR(val);
-  const col = String(item.dataColeta || '').trim();
-  const idStr = String(item.id || '');
-  if (val === '2026-10-02' || val === '02/10/2026' || valBr === '02/10/2026' || col === '02/10/2026' || col === '2026-10-02' || idStr === 'val_1166_sem4_7' || idStr === 'val_1166_sem3_7') {
+  const idStr = String(item.id || item._docId || '');
+  if (idStr === 'val_1166_sem4_7' || idStr === 'val_1166_sem3_7') {
     return true;
   }
   try {
@@ -495,11 +484,8 @@ export function removeLegacySeedValidades(rows: ValidadeRow[], companyId: string
     const id = String(r.id || '');
     if (docId.startsWith('seed-val-') || id.startsWith('seed-val-')) return false;
 
-    // Purga especificamente a validade ou coleta de 02/10/2026
-    const val = String(r.validade || '').trim();
-    const valBr = formatDateToBR(val);
-    const col = String(r.dataColeta || '').trim();
-    if (val === '2026-10-02' || val === '02/10/2026' || valBr === '02/10/2026' || col === '02/10/2026' || col === '2026-10-02' || id === 'val_1166_sem4_7' || id === 'val_1166_sem3_7') {
+    // Purga especificamente os registros legados de sementes antigos
+    if (id === 'val_1166_sem4_7' || id === 'val_1166_sem3_7') {
       return false;
     }
     return true;
@@ -508,22 +494,20 @@ export function removeLegacySeedValidades(rows: ValidadeRow[], companyId: string
   return filtered;
 }
 
-// Auto cleanup imediato de localStorage para remover qualquer resquício da coleta / validade de 02/10/2026
+// Auto cleanup imediato de localStorage apenas dos IDs antigos específicos
 if (typeof window !== 'undefined' && window.localStorage) {
   try {
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
       if (key && (key.startsWith('validades_') || key.startsWith('armazem_validades_'))) {
         const val = localStorage.getItem(key);
-        if (val && (val.includes('2026-10-02') || val.includes('02/10/2026') || val.includes('val_1166_sem4_7') || val.includes('val_1166_sem3_7'))) {
+        if (val && (val.includes('val_1166_sem4_7') || val.includes('val_1166_sem3_7'))) {
           try {
             const parsed = JSON.parse(val);
             if (Array.isArray(parsed)) {
               const cleaned = parsed.filter(item => {
-                const itemVal = formatDateToBR(item.validade);
-                const itemCol = formatDateToBR(item.dataColeta);
                 const id = String(item.id || '');
-                return itemVal !== '02/10/2026' && item.validade !== '2026-10-02' && itemCol !== '02/10/2026' && id !== 'val_1166_sem4_7' && id !== 'val_1166_sem3_7';
+                return id !== 'val_1166_sem4_7' && id !== 'val_1166_sem3_7';
               });
               localStorage.setItem(key, JSON.stringify(cleaned));
             }
