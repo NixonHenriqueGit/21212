@@ -508,7 +508,7 @@ export default function RepackDashboard({ user, empresa, onBack, theme = 'light'
     return d.toISOString().split('T')[0];
   };
 
-  const empresaData = useEmpresaData();
+  const empresaData = useEmpresaData(['repack', 'repack_validades', 'repack_action_plans', 'repack_a3_boards', 'produtos', 'colaboradores', 'acoes']);
   const repackCollection = useRepackData();
 
   // Fetch Firestore entries
@@ -527,15 +527,35 @@ export default function RepackDashboard({ user, empresa, onBack, theme = 'light'
         if (!item) return;
         const idStr = String(item.id || item._docId || '');
         if (idStr && officialIds.has(idStr)) return;
-        const bizKey = `${item.dataISO || item.data || ''}_${item.inicio || ''}_${item.operador || ''}_${item.embalagem || ''}_${item.quantidade || 0}`;
+        const bizKey = idStr ? `id:${idStr}` : `biz:${item.dataISO || item.data || ''}_${item.inicio || ''}_${item.operador || ''}_${item.embalagem || ''}_${item.quantidade || 0}`;
         if (seenCustomKeys.has(bizKey)) return;
         seenCustomKeys.add(bizKey);
+        if (idStr) seenCustomKeys.add(`id:${idStr}`);
         customRows.push(item);
       };
 
       if (empresaData.repack && empresaData.repack.length > 0) {
         empresaData.repack.forEach(addCustomIfNew);
       }
+      if (repackCollection && repackCollection.length > 0) {
+        repackCollection.forEach(addCustomIfNew);
+      }
+
+      // Consulta direta do banco de dados (Firestore + API central do servidor)
+      Promise.all([
+        RepackRepository.getAll(companyId),
+        fetch('/api/repack').then(r => r.ok ? r.json() : null).catch(() => null)
+      ]).then(([dbRows, apiData]) => {
+        if (Array.isArray(dbRows) && dbRows.length > 0) {
+          dbRows.forEach(addCustomIfNew);
+        }
+        if (apiData && Array.isArray(apiData.repack) && apiData.repack.length > 0) {
+          apiData.repack.forEach(addCustomIfNew);
+        }
+        const fresh = customRows.length > 0 ? [...customRows, ...officialRows] : [...officialRows];
+        fresh.sort((a, b) => (b.dataISO || '').localeCompare(a.dataISO || '') || (b.inicio || '').localeCompare(a.inicio || ''));
+        setActualRepackRows(fresh);
+      }).catch(() => {});
 
       // Carrega registros manuais gravados no cache/localStorage para descarregamento imediato
       const repackKeys = [
@@ -1496,10 +1516,17 @@ export default function RepackDashboard({ user, empresa, onBack, theme = 'light'
     };
 
     try {
-      await RepackRepository.create(newEntryWithId, companyId);
+      await RepackRepository.create(newEntryWithId, companyId, newDocId);
+
+      // Persiste também no banco de dados do servidor
+      fetch('/api/repack', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ row: newEntryWithId, empresaId: companyId })
+      }).catch(err => console.warn('[Repack API Sync]', err));
 
       // 1. Atualiza estado local imediatamente
-      const updatedRows = [newEntryWithId, ...actualRepackRows];
+      const updatedRows = [newEntryWithId, ...actualRepackRows.filter(r => (r.id || r._docId) !== newDocId)];
       setActualRepackRows(updatedRows);
       localStorage.setItem(`repack_rows_${companyId}`, JSON.stringify(updatedRows));
 
@@ -1507,8 +1534,9 @@ export default function RepackDashboard({ user, empresa, onBack, theme = 'light'
       try {
         const savedManual = localStorage.getItem(`repack_manual_entries_${companyId}`);
         const manualList = savedManual ? JSON.parse(savedManual) : [];
-        manualList.unshift(newEntryWithId);
-        localStorage.setItem(`repack_manual_entries_${companyId}`, JSON.stringify(manualList));
+        const cleanList = manualList.filter((m: any) => (m.id || m._docId) !== newDocId);
+        cleanList.unshift(newEntryWithId);
+        localStorage.setItem(`repack_manual_entries_${companyId}`, JSON.stringify(cleanList));
       } catch (_) {}
 
       // 3. Dispara eventos para atualização instantânea
@@ -1546,6 +1574,7 @@ export default function RepackDashboard({ user, empresa, onBack, theme = 'light'
     const companyId = empresa?.id || 'demo';
     try {
       await RepackRepository.delete(id, companyId);
+      fetch(`/api/repack/${id}`, { method: 'DELETE' }).catch(() => {});
     } catch (e) {
       console.error(e);
     } finally {

@@ -187,6 +187,7 @@ export interface ValidadeRow {
   atualizadoEm?: string;
   restauradoEm?: string;
   atualizadoPor?: string;
+  isPendingLocal?: boolean;
   _criadoEm?: string;
 }
 
@@ -238,7 +239,7 @@ export interface Tarefa {
   finalizadoEm: string | null;
   duracaoMin: number | null;
   tempoExecucao?: number;
-  tipoOperacao?: string;
+  tipoOperacao?: 'ressuprimento' | 'reabastecimento' | string;
   locData?: {
     distanciaM: number;
     totalIdleSec: number;

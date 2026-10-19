@@ -9,7 +9,6 @@ import {
   doc,
   getDoc,
   getDocs,
-  getDocsFromCache,
   getDocsFromServer,
   setDoc,
   addDoc,
@@ -83,15 +82,9 @@ export class FirestoreDatabase {
     const q = constraints.length > 0 ? query(colRef, ...constraints) : query(colRef);
 
     let snapshot;
-    if (options?.useCacheOnly) {
-      try {
-        snapshot = await getDocsFromCache(q);
-      } catch {
-        snapshot = await getDocs(q);
-      }
-    } else if (options?.forceServer) {
+    try {
       snapshot = await getDocsFromServer(q);
-    } else {
+    } catch {
       snapshot = await getDocs(q);
     }
 
@@ -138,15 +131,9 @@ export class FirestoreDatabase {
     const q = query(colRef, ...constraints);
 
     let snapshot;
-    if (options?.useCacheOnly) {
-      try {
-        snapshot = await getDocsFromCache(q);
-      } catch {
-        snapshot = await getDocs(q);
-      }
-    } else if (options?.forceServer) {
+    try {
       snapshot = await getDocsFromServer(q);
-    } else {
+    } catch {
       snapshot = await getDocs(q);
     }
 

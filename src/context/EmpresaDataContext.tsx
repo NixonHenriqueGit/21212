@@ -289,8 +289,8 @@ export function useEmpresaData(collections?: (keyof typeof COLLECTION_MAPPING)[]
         .map(nome => [nome, COLLECTION_MAPPING[nome] || nome] as [string, keyof Omit<EmpresaDataState, 'loaded' | 'empresaId' | 'subscribeCollection' | 'viewUnitMode' | 'setViewUnitMode'>])
         .filter(([_, chave]) => Boolean(chave));
     } else {
-      // Default: coleções essenciais leves
-      const defaultEssentials: (keyof typeof COLLECTION_MAPPING)[] = ['produtos', 'colaboradores', 'acoes', 'validades', 'quebras'];
+      // Default: coleções essenciais com repack e despejo para garantir sincronização em tempo real do banco de dados
+      const defaultEssentials: (keyof typeof COLLECTION_MAPPING)[] = ['produtos', 'colaboradores', 'acoes', 'validades', 'quebras', 'repack', 'despejo'];
       entriesToSubscribe = defaultEssentials
         .map(nome => [nome, COLLECTION_MAPPING[nome] || nome] as [string, keyof Omit<EmpresaDataState, 'loaded' | 'empresaId' | 'subscribeCollection' | 'viewUnitMode' | 'setViewUnitMode'>])
         .filter(([_, chave]) => Boolean(chave));

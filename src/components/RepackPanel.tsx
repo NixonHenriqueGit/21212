@@ -204,9 +204,10 @@ export default function RepackPanel({ user, empresa, shiftStarted, onRequireShif
           if (!item) return;
           const idStr = String(item.id || item._docId || '');
           if (idStr && officialIds.has(idStr)) return;
-          const bizKey = `${item.dataISO || item.data || ''}_${item.inicio || ''}_${item.operador || ''}_${item.embalagem || ''}_${item.quantidade || 0}`;
+          const bizKey = idStr ? `id:${idStr}` : `biz:${item.dataISO || item.data || ''}_${item.inicio || ''}_${item.operador || ''}_${item.embalagem || ''}_${item.quantidade || 0}`;
           if (seenCustomKeys.has(bizKey)) return;
           seenCustomKeys.add(bizKey);
+          if (idStr) seenCustomKeys.add(`id:${idStr}`);
           customRows.push(item);
         };
 
@@ -215,7 +216,7 @@ export default function RepackPanel({ user, empresa, shiftStarted, onRequireShif
           empresaData.repack.forEach(addCustomIfNew);
         }
 
-        // 2. Carrega de repack_manual_entries_ (registros recém cadastrados pelo usuário)
+        // 2. Carrega de repack_manual_entries_ (registros manuais imediatos)
         const savedManual = localStorage.getItem(`repack_manual_entries_${companyId}`);
         if (savedManual) {
           try {
@@ -226,12 +227,31 @@ export default function RepackPanel({ user, empresa, shiftStarted, onRequireShif
           } catch (e) {}
         }
 
-        const rows = customRows.length > 0 ? [...customRows, ...officialRows] : [...officialRows];
-        rows.sort((a, b) => (b.dataISO || '').localeCompare(a.dataISO || '') || (b.inicio || '').localeCompare(a.inicio || ''));
+        const initialCombined = customRows.length > 0 ? [...customRows, ...officialRows] : [...officialRows];
+        initialCombined.sort((a, b) => (b.dataISO || '').localeCompare(a.dataISO || '') || (b.inicio || '').localeCompare(a.inicio || ''));
         if (!cancelLoad) {
-          setRepackRows(rows);
-          setIsDataLoading(false);
+          setRepackRows(initialCombined);
         }
+
+        // 3. Consulta direta do banco de dados (Firestore + Banco de Dados do Servidor)
+        Promise.all([
+          RepackRepository.getAll(companyId),
+          fetch('/api/repack').then(r => r.ok ? r.json() : null).catch(() => null)
+        ]).then(([dbRows, apiData]) => {
+          if (cancelLoad) return;
+          if (Array.isArray(dbRows) && dbRows.length > 0) {
+            dbRows.forEach(addCustomIfNew);
+          }
+          if (apiData && Array.isArray(apiData.repack) && apiData.repack.length > 0) {
+            apiData.repack.forEach(addCustomIfNew);
+          }
+          const freshRows = customRows.length > 0 ? [...customRows, ...officialRows] : [...officialRows];
+          freshRows.sort((a, b) => (b.dataISO || '').localeCompare(a.dataISO || '') || (b.inicio || '').localeCompare(a.inicio || ''));
+          setRepackRows(freshRows);
+          setIsDataLoading(false);
+        }).catch(() => {
+          if (!cancelLoad) setIsDataLoading(false);
+        });
       };
 
       if (isImmediate) {
@@ -357,10 +377,17 @@ export default function RepackPanel({ user, empresa, shiftStarted, onRequireShif
     };
 
     try {
-      await RepackRepository.create(fullCreatedRow, companyId);
+      await RepackRepository.create(fullCreatedRow, companyId, newDocId);
+
+      // Persiste também no banco de dados do servidor
+      fetch('/api/repack', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ row: fullCreatedRow, empresaId: companyId })
+      }).catch(err => console.warn('[Repack API Sync]', err));
 
       // 1. Atualiza estado local imediatamente
-      const nextRows = [fullCreatedRow, ...repackRows];
+      const nextRows = [fullCreatedRow, ...repackRows.filter(r => (r.id || r._docId) !== newDocId)];
       setRepackRows(nextRows);
       localStorage.setItem(`repack_rows_${companyId}`, JSON.stringify(nextRows));
 
@@ -368,8 +395,9 @@ export default function RepackPanel({ user, empresa, shiftStarted, onRequireShif
       try {
         const savedManual = localStorage.getItem(`repack_manual_entries_${companyId}`);
         const manualList = savedManual ? JSON.parse(savedManual) : [];
-        manualList.unshift(fullCreatedRow);
-        localStorage.setItem(`repack_manual_entries_${companyId}`, JSON.stringify(manualList));
+        const cleanList = manualList.filter((m: any) => (m.id || m._docId) !== newDocId);
+        cleanList.unshift(fullCreatedRow);
+        localStorage.setItem(`repack_manual_entries_${companyId}`, JSON.stringify(cleanList));
       } catch (_) {}
 
       // 3. Dispara eventos globais para atualizar Painel do Ajudante e Dashboard de Repack
@@ -399,6 +427,7 @@ export default function RepackPanel({ user, empresa, shiftStarted, onRequireShif
     const companyId = empresa?.id || 'demo';
     try {
       await RepackRepository.delete(docId, companyId);
+      fetch(`/api/repack/${docId}`, { method: 'DELETE' }).catch(() => {});
     } catch (e) {
       console.error(e);
     } finally {
@@ -493,9 +522,11 @@ export default function RepackPanel({ user, empresa, shiftStarted, onRequireShif
     const localizacaoValor = vLocalizacao === 'outro' ? vNomeManual.trim() : 'Repack';
     const qtyVal = vQuantidade === '' ? 1 : vQuantidade;
 
+    const localDocId = `repval_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
     const newRow = {
       empresaId: empresa?.id || 'demo',
-      id: Date.now(),
+      id: localDocId,
+      _docId: localDocId,
       codigo: String(vSelectedProd.codigo),
       descricao: vSelectedProd.descricao,
       quantidade: qtyVal,
@@ -506,7 +537,8 @@ export default function RepackPanel({ user, empresa, shiftStarted, onRequireShif
     };
 
     try {
-      await repackValidadesRepo.create(newRow, empresa?.id || 'demo');
+      await repackValidadesRepo.create(newRow as any, empresa?.id || 'demo', localDocId);
+      setRepackValidades(prev => [newRow as any, ...prev]);
 
       // Reset
       setVProdutoBusca('');

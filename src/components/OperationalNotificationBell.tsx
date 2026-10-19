@@ -393,7 +393,7 @@ export const OperationalNotificationBell: React.FC<OperationalNotificationBellPr
                             markAsRead(notif.id);
                             setIsOpen(false);
                             if (onNavigate && notif.actionPanel) {
-                              onNavigate(notif.actionPanel, notif.actionTab);
+                              setTimeout(() => onNavigate(notif.actionPanel!, notif.actionTab), 0);
                             }
                           }}
                           className="px-2 py-0.5 bg-sky-600 hover:bg-sky-500 text-white font-bold text-[10px] uppercase rounded transition-all cursor-pointer flex items-center gap-1"

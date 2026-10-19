@@ -83,6 +83,37 @@ const FABRICAS_AMBEV = [
   'VIAMAO'
 ];
 
+/**
+ * Normaliza e extrai a data de coleta do registro no formato YYYY-MM-DD
+ */
+function getColetaDateKey(item: ValidadeRow): string {
+  const raw = item.cadastradoEm || (item as any).dataISO || (item as any).dataRegistro || (item as any).criadoEm || (item as any).createdAt || (item as any).data || item.dataColeta;
+  if (raw) {
+    const s = String(raw).trim();
+    if (s.includes('T')) return s.split('T')[0];
+    if (s.includes('-') && s.length >= 10) return s.slice(0, 10);
+    if (s.includes('/')) {
+      const parts = s.split('/');
+      if (parts.length === 3) {
+        const d = parts[0].padStart(2, '0');
+        const m = parts[1].padStart(2, '0');
+        const y = parts[2].length === 2 ? `20${parts[2]}` : parts[2];
+        return `${y}-${m}-${d}`;
+      }
+    }
+  }
+  if (item.dataColeta) {
+    const parts = String(item.dataColeta).split('/');
+    if (parts.length === 3) {
+      const d = parts[0].padStart(2, '0');
+      const m = parts[1].padStart(2, '0');
+      const y = parts[2].length === 2 ? `20${parts[2]}` : parts[2];
+      return `${y}-${m}-${d}`;
+    }
+  }
+  return '2026-08-28';
+}
+
 export const WorkstationCriticosRecolhimento: React.FC<WorkstationCriticosProps> = React.memo(({
   validadesList,
   allValidadesList,
@@ -99,6 +130,30 @@ export const WorkstationCriticosRecolhimento: React.FC<WorkstationCriticosProps>
   const [localFilter, setLocalFilter] = useState<string>('todos');
   const [statusActionFilter, setStatusActionFilter] = useState<'pendente' | 'vendido' | 'todos'>('pendente');
   const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
+
+  // Extrai todas as datas de coleta disponíveis na lista ordenadas da mais recente para a mais antiga
+  const availableColetaDates = useMemo(() => {
+    const datesMap = new Map<string, { key: string; label: string; count: number }>();
+    
+    (validadesList || []).forEach(item => {
+      const key = getColetaDateKey(item);
+      let label = key;
+      try {
+        const [y, m, d] = key.split('-');
+        label = `${d}/${m}/${y}`;
+      } catch {}
+
+      if (!datesMap.has(key)) {
+        datesMap.set(key, { key, label, count: 0 });
+      }
+      datesMap.get(key)!.count += 1;
+    });
+
+    return Array.from(datesMap.values()).sort((a, b) => b.key.localeCompare(a.key));
+  }, [validadesList]);
+
+  // Seletor de Coleta: por padrão 'latest' (sincronizado automaticamente com a última validade coletada do conferente)
+  const [selectedColetaFilter, setSelectedColetaFilter] = useState<string>('latest');
 
   // Non-blocking Toast & Mutation locks
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'warning' | 'info' | 'error' } | null>(null);
@@ -240,6 +295,15 @@ export const WorkstationCriticosRecolhimento: React.FC<WorkstationCriticosProps>
     // 2. Aplica filtro de validades selecionadas (a Workstation agora sincroniza exatamente com a validade selecionada)
     const sourceList = filterValidadesByActiveSelection(adjustedList, companyId);
 
+    // 3. Sincroniza estritamente com a ÚLTIMA VALIDADE COLETADA DO CONFERENTE (ou filtro escolhido)
+    let filteredByColeta = sourceList;
+    if (selectedColetaFilter === 'latest' && availableColetaDates.length > 0) {
+      const latestKey = availableColetaDates[0].key;
+      filteredByColeta = sourceList.filter(item => getColetaDateKey(item) === latestKey);
+    } else if (selectedColetaFilter !== 'todas') {
+      filteredByColeta = sourceList.filter(item => getColetaDateKey(item) === selectedColetaFilter);
+    }
+
     // Group by codigo + validade
     const map = new Map<string, {
       codigo: string;
@@ -259,7 +323,7 @@ export const WorkstationCriticosRecolhimento: React.FC<WorkstationCriticosProps>
       qtdAtualizadaLog?: { qty: number; updatedAt: string; conferente: string };
     }>();
 
-    sourceList.forEach(item => {
+    filteredByColeta.forEach(item => {
       const cod = String(item.codigo || '000').trim();
       const val = String(item.validade || '').trim();
       if (!val) return;
@@ -391,7 +455,7 @@ export const WorkstationCriticosRecolhimento: React.FC<WorkstationCriticosProps>
     // Return unifies items without generating mock fallback items
     list.sort((a, b) => a.diasParaVencer - b.diasParaVencer);
     return list;
-  }, [validadesList, customQuantities, companyId, syncTrigger]);
+  }, [validadesList, customQuantities, companyId, syncTrigger, selectedColetaFilter, availableColetaDates]);
 
   // Active FEFO demands from storage
   const activeDemands = useMemo(() => {
@@ -1241,13 +1305,20 @@ export const WorkstationCriticosRecolhimento: React.FC<WorkstationCriticosProps>
       {/* HEADER SECTION */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800 pb-4">
         <div className="space-y-1">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="bg-rose-50 dark:bg-rose-500/20 text-rose-600 dark:text-rose-300 border border-rose-200 dark:border-rose-500/40 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1">
               <ShieldAlert className="w-3 h-3 text-rose-500" /> Workstation CCO
             </span>
-            {activeColetaLabel && (
-              <span className="bg-purple-50 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-500/40 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1 font-mono" title="Data da contagem ativa que está alimentando a tabela e os itens críticos">
-                📅 Contagem: {activeColetaLabel}
+            {availableColetaDates.length > 0 && (
+              <span className="bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-600/50 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1 font-mono shadow-xs" title="Sincronização ativa de coleta">
+                <span>⚡ Coleta em Análise:</span>
+                <strong>
+                  {selectedColetaFilter === 'latest'
+                    ? `Última Coleta (${availableColetaDates[0]?.label})`
+                    : selectedColetaFilter === 'todas'
+                    ? 'Todas as Coletas'
+                    : `Coleta de ${availableColetaDates.find(c => c.key === selectedColetaFilter)?.label || selectedColetaFilter}`}
+                </strong>
               </span>
             )}
             <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider">
@@ -1454,6 +1525,33 @@ export const WorkstationCriticosRecolhimento: React.FC<WorkstationCriticosProps>
               <option value="picking">Picking</option>
               <option value="pnc">PNC / Bloqueado</option>
             </select>
+
+            {/* Coleta do Conferente Filter */}
+            {availableColetaDates.length > 0 && (
+              <div className="flex items-center gap-1.5 bg-white dark:bg-[#111a30] border border-purple-400/60 dark:border-purple-600/60 rounded-lg px-2.5 py-1.5 shadow-2xs">
+                <span className="text-[11px] font-black text-purple-600 dark:text-purple-400 uppercase tracking-wider flex items-center gap-1 shrink-0">
+                  <Calendar className="w-3.5 h-3.5" /> Coleta:
+                </span>
+                <select
+                  value={selectedColetaFilter}
+                  onChange={e => setSelectedColetaFilter(e.target.value)}
+                  className="bg-transparent text-xs text-slate-900 dark:text-purple-200 font-bold outline-none cursor-pointer"
+                  title="Selecione a coleta do conferente que deseja analisar"
+                >
+                  <option value="latest" className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-bold">
+                    ⭐ Última Coleta ({availableColetaDates[0]?.label || 'Mais Recente'}) — {availableColetaDates[0]?.count || 0} lotes
+                  </option>
+                  <option value="todas" className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-bold">
+                    📋 Todas as Coletas Acumuladas ({validadesList.length} lotes)
+                  </option>
+                  {availableColetaDates.map(c => (
+                    <option key={c.key} value={c.key} className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">
+                      📅 Coleta de {c.label} ({c.count} {c.count === 1 ? 'lote' : 'lotes'})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
         </div>
 
@@ -1502,13 +1600,15 @@ export const WorkstationCriticosRecolhimento: React.FC<WorkstationCriticosProps>
           </div>
           <p className="text-sm text-slate-800 dark:text-slate-200 font-bold">
             {criticosUnificados.length === 0 
-              ? "Nenhum item na janela crítica (≤45 dias) encontrado no recolhimento!"
+              ? (selectedColetaFilter === 'latest' && availableColetaDates.length > 0
+                  ? `Nenhum item na janela crítica (≤45 dias) na última coleta do conferente (${availableColetaDates[0]?.label})!`
+                  : "Nenhum item na janela crítica (≤45 dias) encontrado no recolhimento!")
               : "Nenhum item encontrado com os filtros selecionados."
             }
           </p>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
             {criticosUnificados.length === 0 
-              ? "Todos os lotes possuem cobertura superior a 45 dias para a data de corte."
+              ? "Todos os lotes avaliados possuem cobertura superior a 45 dias para a data de corte."
               : "Tente limpar os filtros de busca ou alterar a localização."
             }
           </p>

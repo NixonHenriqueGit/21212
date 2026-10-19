@@ -1,4 +1,4 @@
-import { Query, DocumentData, getDocsFromCache, getDocsFromServer, getDocs, QuerySnapshot } from 'firebase/firestore';
+import { Query, DocumentData, getDocsFromServer, getDocs, QuerySnapshot } from 'firebase/firestore';
 import { recordActualFirestoreReads } from './hybridCacheService';
 
 /**
@@ -15,14 +15,7 @@ import { recordActualFirestoreReads } from './hybridCacheService';
 export async function fetchComCache<T = DocumentData>(
   q: Query<T>
 ): Promise<QuerySnapshot<T>> {
-  try {
-    const cacheSnap = await getDocsFromCache(q);
-    if (!cacheSnap.empty) {
-      return cacheSnap;
-    }
-  } catch (e) {
-    // Cache ainda não tem nada para essa query específica — segue pro servidor
-  }
+  // Consulta direta ao servidor Firestore (sem cache conforme solicitado)
   try {
     const serverSnap = await getDocsFromServer(q);
     recordActualFirestoreReads(serverSnap.docs.length);

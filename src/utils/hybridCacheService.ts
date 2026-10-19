@@ -25,10 +25,11 @@ let idbPromise: Promise<IDBDatabase | null> | null = null;
 const memoryCache = new Map<string, CacheEntry<any>>();
 
 // Métricas de leituras economizadas em tempo de execução
-export let HYBRID_CACHE_ACTIVE = false;
+// Cache desativado permanentemente a pedido do usuário: todas as consultas vão diretamente ao banco de dados Firestore
+export const HYBRID_CACHE_ACTIVE = false;
 
-export function setHybridCacheActive(active: boolean) {
-  HYBRID_CACHE_ACTIVE = active;
+export function setHybridCacheActive(_active: boolean) {
+  // Mantido false por diretriz do usuário (sem cache na plataforma)
 }
 
 export interface CacheMetrics {

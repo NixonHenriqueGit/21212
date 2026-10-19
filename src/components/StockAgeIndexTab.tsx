@@ -101,6 +101,29 @@ export default function StockAgeIndexTab({ validadesList = [], validades = [], u
   useEffect(() => {
     if (activeValidades && activeValidades.length > 0) {
       syncValidadesListToMonthlyColetas(activeValidades, empresa?.id || 'demo');
+
+      // Detecta automaticamente o mês da última coleta do conferente
+      for (const item of activeValidades) {
+        const raw = item.cadastradoEm || (item as any).dataISO || (item as any).dataRegistro || item.dataColeta;
+        if (raw) {
+          const s = String(raw).trim();
+          if (s.includes('-')) {
+            const parts = s.split('-');
+            if (parts.length >= 2) {
+              const m = parts[1].padStart(2, '0');
+              setSelectedMonthKey(prev => prev === '08' ? m : prev);
+              break;
+            }
+          } else if (s.includes('/')) {
+            const parts = s.split('/');
+            if (parts.length >= 2) {
+              const m = parts[1].padStart(2, '0');
+              setSelectedMonthKey(prev => prev === '08' ? m : prev);
+              break;
+            }
+          }
+        }
+      }
     }
   }, [activeValidades, empresa?.id]);
 

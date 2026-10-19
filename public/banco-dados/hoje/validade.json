@@ -2632,6 +2632,19 @@
       "acaoRecomendada": "Manter fluxo FEFO padrão"
     },
     {
+      "id": "1786363469799",
+      "codigo": 1166,
+      "descricao": "SUKITA UVA PET 2L CAIXA C/6",
+      "lote": "L-PADRAO",
+      "validade": "2026-10-02",
+      "diasRestantes": 120,
+      "quantidade": 0,
+      "unidade": "CX",
+      "localizacao": "central",
+      "status": "normal",
+      "acaoRecomendada": "Manter fluxo FEFO padrão"
+    },
+    {
       "id": "1789732969173",
       "codigo": 9083,
       "descricao": "SKOL LT 473ML SH C/12 NPAL",
@@ -3135,6 +3148,19 @@
       "quantidade": 60,
       "unidade": "CX",
       "localizacao": "central",
+      "status": "normal",
+      "acaoRecomendada": "Manter fluxo FEFO padrão"
+    },
+    {
+      "id": "1786357122068",
+      "codigo": 1745,
+      "descricao": "SKOL LT 269ML SH C15 NPAL",
+      "lote": "L-PADRAO",
+      "validade": "2026-10-02",
+      "diasRestantes": 120,
+      "quantidade": 0,
+      "unidade": "CX",
+      "localizacao": "picking",
       "status": "normal",
       "acaoRecomendada": "Manter fluxo FEFO padrão"
     },

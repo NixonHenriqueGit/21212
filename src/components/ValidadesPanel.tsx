@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
 import { isCustomFirebaseConnected } from '../firebase';
@@ -32,9 +32,6 @@ import { getInitialDefaultValidades, removeLegacySeedValidades, formatDateToBR }
 import { encaminharItemParaPnc } from '../utils/gestaoPncManager';
 import Import030519Modal from './Import030519Modal';
 import { syncEntityToPublic } from '../services/bancoDadosSyncClient';
-import { ModalRetiradaValidade } from './ModalRetiradaValidade';
-import { ValidadesRetiradasTab } from './ValidadesRetiradasTab';
-import { checkValidadesPendentesRetirada, ValidadeRetiradaRecord } from '../utils/validadesRetiradasManager';
 
 export const getTodayDDMMYYYY = (): string => {
   const now = new Date();
@@ -160,33 +157,20 @@ export default function ValidadesPanel({ user, empresa, hideSugerirMelhoria, the
     setDataColetaInput(finalVal);
   };
 
-  const [activeTab, setActiveTab] = useState<'form' | 'lista' | 'stock_age' | 'futuro_shelf' | 'escoamento' | 'fefo_quadro' | 'fefo_picking' | 'fefo_estoque' | 'retiradas'>('form');
-  const [validadesList, setValidadesList] = useState<ValidadeRow[]>([]);
+  const [activeTab, setActiveTab] = useState<'form' | 'lista' | 'stock_age' | 'futuro_shelf' | 'escoamento' | 'fefo_quadro' | 'fefo_picking' | 'fefo_estoque'>('form');
+  const [validadesList, setValidadesList] = useState<ValidadeRow[]>(() => {
+    try {
+      const saved = localStorage.getItem(`validades_${empresaId}`);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return removeLegacySeedValidades(parsed, empresaId);
+        }
+      }
+    } catch (e) {}
+    return [];
+  });
   const [searchQuery, setSearchQuery] = useState<string>('');
-
-  // Estados de Retirada Física de Validades (Baixa Conferente)
-  const [showRetiradaModal, setShowRetiradaModal] = useState<boolean>(false);
-  const [retiradaTargetItem, setRetiradaTargetItem] = useState<ValidadeRow | null>(null);
-
-  const validadesPendentesRetirada = useMemo(() => {
-    return checkValidadesPendentesRetirada(validadesList);
-  }, [validadesList]);
-
-  const handleAbrirRetirada = (r: ValidadeRow) => {
-    setRetiradaTargetItem(r);
-    setShowRetiradaModal(true);
-  };
-
-  const handleRetiradaSuccess = (record: ValidadeRetiradaRecord) => {
-    toast(`✅ Validade de ${record.validade} (${record.descricao}) retirada com sucesso pelo Conferente!`);
-    const targetCod = String(record.codigo).replace(/^0+/, '').trim();
-    const remaining = validadesList.filter(item => {
-      const itemCod = String(item.codigo).replace(/^0+/, '').trim();
-      const itemVal = formatDateToBR(item.validade);
-      return !(targetCod === itemCod && itemVal === record.validade);
-    });
-    setValidadesList(remaining);
-  };
 
   // Filtros personalizados para Estoque x Estoque
   const [fefoEstoqueStartDate, setFefoEstoqueStartDate] = useState<string>('');
@@ -483,31 +467,22 @@ export default function ValidadesPanel({ user, empresa, hideSugerirMelhoria, the
     return getAvailableProductsForConferente(empresaId, empresaData.produtos);
   }, [empresaId, empresaData.produtos, catalogTrigger]);
 
-  // Sync with empresaData (scoped to company) - Filter out repack validades and preserve local additions
+  // Sincronização direta com o banco de dados Firestore (sem cache e sem sobrescrita indevida)
   useEffect(() => {
-    // 1. Carrega dados do localStorage primeiro para manter adições do usuário
-    let baseRows: ValidadeRow[] = [];
-    const saved = localStorage.getItem(`validades_${empresaId}`);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          baseRows = parsed;
+    let rows: ValidadeRow[] = empresaData.validades || [];
+    if (rows.length === 0) {
+      const saved = localStorage.getItem(`validades_${empresaId}`);
+      if (saved) {
+        try {
+          rows = JSON.parse(saved);
+        } catch (e) {
+          console.error(e);
         }
-      } catch (e) {
-        console.error(e);
       }
     }
 
-    if (baseRows.length === 0 && empresaData.validades && empresaData.validades.length > 0) {
-      baseRows = empresaData.validades;
-    }
-
-    if (baseRows.length === 0) {
-      baseRows = getInitialDefaultValidades(empresaId);
-    }
-
-    const conferenteRows = removeLegacySeedValidades(baseRows.filter((r: any) => {
+    // Exclui validades de repack para exibir apenas validades do armazém/conferente
+    let conferenteRows = removeLegacySeedValidades(rows.filter((r: any) => {
       const loc = String(r.localizacao || '').toLowerCase();
       const origem = String(r.origem || '').toLowerCase();
       const setor = String(r.setor || '').toLowerCase();
@@ -518,38 +493,39 @@ export default function ValidadesPanel({ user, empresa, hideSugerirMelhoria, the
       return true;
     }));
 
-    setValidadesList(conferenteRows);
-    try {
-      localStorage.setItem(`validades_${empresaId}`, JSON.stringify(conferenteRows));
-      localStorage.setItem(`armazem_validades_${empresaId}`, JSON.stringify(conferenteRows));
-    } catch (e) {}
+    if (conferenteRows.length === 0) {
+      conferenteRows = getInitialDefaultValidades(empresaId);
+    }
 
-    // 2. Busca na API compartilhada da nuvem/servidor e MESCLA preservando adições locais
-    fetch('/api/validades')
-      .then(r => r.json())
-      .then(data => {
-        if (data && data.success && Array.isArray(data.validades) && data.validades.length > 0) {
-          const apiRows = removeLegacySeedValidades(data.validades.filter((r: any) => {
-            const loc = String(r.localizacao || '').toLowerCase();
-            return !loc.includes('repack') && !r.isRepack;
-          }));
-
-          setValidadesList(current => {
-            // Mescla: mantém itens locais que não existem na API por id ou código+lote+validade
-            const apiKeys = new Set(apiRows.map(r => String(r.id || r._docId)));
-            const localOnly = current.filter(r => !apiKeys.has(String(r.id || r._docId)));
-            const merged = [...apiRows, ...localOnly];
-            try {
-              localStorage.setItem(`validades_${empresaId}`, JSON.stringify(merged));
-              localStorage.setItem(`armazem_validades_${empresaId}`, JSON.stringify(merged));
-            } catch (e) {}
-            syncValidadesListToMonthlyColetas(merged, empresaId);
-            return merged;
-          });
-        }
-      })
-      .catch(() => {});
-  }, [empresaId]);
+    setValidadesList(prevList => {
+      // Preserva lotes locais recém cadastrados que ainda estão em trânsito de sincronização com o Firestore
+      const pendingLocal = prevList.filter(prevItem => {
+        const pDocId = String(prevItem._docId || '');
+        const pId = String(prevItem.id || '');
+        const isLocal = pDocId.startsWith('val_') || pId.startsWith('val_') || (prevItem as any).isPendingLocal;
+        if (!isLocal) return false;
+        const existsInRemote = conferenteRows.some(cr => {
+          const crDocId = String(cr._docId || '');
+          const crId = String(cr.id || '');
+          return (pDocId && crDocId && pDocId === crDocId) ||
+                 (pId && crId && pId === crId) ||
+                 (String(cr.codigo).trim() === String(prevItem.codigo).trim() &&
+                  String(cr.lote || '').trim() === String(prevItem.lote || '').trim() &&
+                  String(cr.validade || '').trim() === String(prevItem.validade || '').trim() &&
+                  String(cr.localizacao || '').trim().toLowerCase() === String(prevItem.localizacao || '').trim().toLowerCase() &&
+                  String(cr.bloco || '').trim().toLowerCase() === String(prevItem.bloco || '').trim().toLowerCase());
+        });
+        return !existsInRemote;
+      });
+      const merged = [...pendingLocal, ...conferenteRows];
+      try {
+        localStorage.setItem(`validades_${empresaId}`, JSON.stringify(merged));
+        localStorage.setItem(`armazem_validades_${empresaId}`, JSON.stringify(merged));
+      } catch (e) {}
+      syncValidadesListToMonthlyColetas(merged, empresaId);
+      return merged;
+    });
+  }, [empresaData.validades, empresaId]);
 
   const getDaysRemaining = (expDate: string) => {
     if (!expDate) return 0;
@@ -715,7 +691,7 @@ export default function ValidadesPanel({ user, empresa, hideSugerirMelhoria, the
         setValidadesList(updatedListAfterSave);
         localStorage.setItem(`validades_${empresaId}`, JSON.stringify(updatedListAfterSave));
         syncValidadesListToMonthlyColetas(updatedListAfterSave, empresaId);
-        toast(`Produto atualizado na Semana ${semanaNumCalculada} de Agosto!`);
+        toast(`Produto atualizado com sucesso! (${semanaColetaInfo.label || `Semana ${semanaNumCalculada}`})`);
 
         if (idToUpdate) {
           ValidadesRepository.update(String(idToUpdate), dataObj, empresaId).catch(err => {
@@ -723,68 +699,33 @@ export default function ValidadesPanel({ user, empresa, hideSugerirMelhoria, the
           });
         }
       } else {
-        // Atualizar registro se for o mesmo produto, mesma validade e mesma localização
-        const targetCod = String(dataObj.codigo).trim();
-        const targetLoc = String(dataObj.localizacao).toLowerCase();
-        const targetRua = String(dataObj.bloco || '').trim().toLowerCase();
-        const targetVal = String(dataObj.validade).trim();
-        const targetLote = String((dataObj as any).lote || '').trim().toLowerCase();
-
-        const idsToDel: string[] = [];
-        const filteredList = [];
-        for (const item of validadesList) {
-          const itemCod = String(item.codigo).trim();
-          const itemLoc = String(item.localizacao || 'central').toLowerCase();
-          const itemRua = String(item.bloco || '').trim().toLowerCase();
-          const itemVal = String(item.validade || '').trim();
-          const itemLote = String(item.lote || '').trim().toLowerCase();
-
-          // Só substitui se for a mesma validade ou mesmo lote na mesma posição.
-          // Se for validade diferente (ex: "já tem uma aqui"), mantém AMBAS!
-          const isSameBatch = itemCod === targetCod && itemLoc === targetLoc && itemRua === targetRua && (itemVal === targetVal || (targetLote && itemLote === targetLote));
-
-          if (isSameBatch) {
-            const idToDel = item._docId || (item as any).id;
-            if (idToDel) {
-              idsToDel.push(String(idToDel));
-            }
-          } else {
-            filteredList.push(item);
-          }
-        }
-
         const localId = Date.now();
         const localDocId = 'val_' + localId + '_' + Math.random().toString(36).substring(2, 8);
         const newRow: ValidadeRow = {
           _docId: localDocId,
-          id: localId,
+          id: localDocId,
           empresaId,
           ...dataObj,
+          isPendingLocal: true,
           cadastradoEm: new Date().toISOString()
         };
 
-        const regKey = getRegDateKey(newRow);
-        setExpandedDates(prev => ({ ...prev, [regKey]: true }));
-
-        updatedListAfterSave = [...filteredList, newRow];
+        // Adiciona o novo lote à lista sem apagar lotes existentes
+        updatedListAfterSave = [newRow, ...validadesList];
         setValidadesList(updatedListAfterSave);
         localStorage.setItem(`validades_${empresaId}`, JSON.stringify(updatedListAfterSave));
-        localStorage.setItem(`armazem_validades_${empresaId}`, JSON.stringify(updatedListAfterSave));
         syncValidadesListToMonthlyColetas(updatedListAfterSave, empresaId);
-        toast(`Produto salvo com sucesso na Semana ${semanaNumCalculada} de Agosto!`);
+        toast(`Produto salvo com sucesso! (${semanaColetaInfo.label || `Semana ${semanaNumCalculada}`})`);
 
-        // Sincronização assíncrona em segundo plano no Firestore sem travar o botão para o operador
+        // Sincronização direta no Firestore
         (async () => {
           try {
-            if (idsToDel.length > 0) {
-              await Promise.allSettled(idsToDel.map(id => ValidadesRepository.delete(id, empresaId)));
-            }
             const created = await ValidadesRepository.create(newRow, empresaId, localDocId);
             if (created && created._docId && created._docId !== localDocId) {
               setValidadesList(curr => curr.map(item => item.id === localId ? { ...item, _docId: created._docId } : item));
             }
           } catch (err) {
-            console.warn('[ValidadesPanel] Background persistence:', err);
+            console.warn('[ValidadesPanel] Erro ao persistir validade no Firestore:', err);
           }
         })();
       }
@@ -1032,6 +973,45 @@ export default function ValidadesPanel({ user, empresa, hideSugerirMelhoria, the
     }).catch(err => console.warn('[Validades API Delete Sync]', err));
   };
 
+  const handleDeleteDateGroup = (regDateKey: string, rowsToDelete: ValidadeRow[]) => {
+    let formattedDate = regDateKey;
+    try {
+      const [y, m, d] = regDateKey.split('-');
+      formattedDate = `${d}/${m}/${y}`;
+    } catch (e) {}
+
+    const count = rowsToDelete.length;
+    if (!window.confirm(`Deseja realmente limpar todos os ${count} lote(s) registrados sob a data ${formattedDate}?\n\nEsta ação removerá estes itens da contagem para que o conferente possa registrar uma nova coleta limpa do zero.`)) {
+      return;
+    }
+
+    const idsToDeleteSet = new Set(rowsToDelete.map(r => String(r._docId || (r as any).id)));
+    const remaining = validadesList.filter(item => {
+      const idKey = String(item._docId || (item as any).id);
+      return !idsToDeleteSet.has(idKey);
+    });
+
+    setValidadesList(remaining);
+    localStorage.setItem(`validades_${empresaId}`, JSON.stringify(remaining));
+    syncValidadesListToMonthlyColetas(remaining, empresaId);
+    toast(`Lotes da data ${formattedDate} removidos com sucesso!`);
+
+    // Sincroniza em segundo plano no Firestore
+    rowsToDelete.forEach(r => {
+      const idToDel = r._docId || (r as any).id;
+      if (idToDel) {
+        ValidadesRepository.delete(String(idToDel), empresaId).catch(console.error);
+      }
+    });
+
+    // Sincroniza exclusão com o servidor central
+    fetch('/api/validades', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ validades: remaining, empresaId })
+    }).catch(err => console.warn('[Validades API Group Delete Sync]', err));
+  };
+
   const handleSendRowToPnc = async (r: ValidadeRow) => {
     const qtdCx = r.quantidade || r.totalUnities || 0;
     if (!confirm(`Deseja encaminhar o item "${r.descricao}" (${qtdCx} cx) para a Guia de PNC para Tratativa?\n\nO item sairá da lista de estoque normal e será gerenciado pelo PNC.`)) {
@@ -1126,7 +1106,7 @@ export default function ValidadesPanel({ user, empresa, hideSugerirMelhoria, the
 
   // Helper to extract registration date key for history filtering
   const getRegDateKey = (item: ValidadeRow) => {
-    const raw = item.dataColeta || item.cadastradoEm || (item as any).dataISO || (item as any).dataRegistro || (item as any).criadoEm || (item as any).createdAt || (item as any).data;
+    const raw = item.cadastradoEm || (item as any).dataISO || (item as any).dataRegistro || (item as any).criadoEm || (item as any).createdAt || (item as any).data || item.dataColeta;
     if (raw) {
       const s = String(raw).trim();
       if (s.includes('T')) return s.split('T')[0];
@@ -1141,72 +1121,37 @@ export default function ValidadesPanel({ user, empresa, hideSugerirMelhoria, the
         }
       }
     }
-    // Fallback: Semana 4 oficial 28/08/2026
+    if (item.dataColeta) {
+      const parts = String(item.dataColeta).split('/');
+      if (parts.length === 3) {
+        const d = parts[0].padStart(2, '0');
+        const m = parts[1].padStart(2, '0');
+        const y = parts[2].length === 2 ? `20${parts[2]}` : parts[2];
+        return `${y}-${m}-${d}`;
+      }
+    }
+    // Fallback: se não tiver data nem dataColeta, manter como histórico base e nunca sobrescrever arbitrariamente como hoje
     return '2026-08-28';
-  };
-
-  const handleExcluirColetaCompleta = async (regDateKey: string) => {
-    let formattedDate = regDateKey;
-    try {
-      const [y, m, d] = regDateKey.split('-');
-      formattedDate = `${d}/${m}/${y}`;
-    } catch (_) {}
-
-    if (!window.confirm(`⚠️ Deseja realmente remover toda a coleta do dia ${formattedDate}?\n\nEsta ação excluirá todos os lotes desta coleta do armazém e da visualização.`)) {
-      return;
-    }
-
-    try {
-      const remaining = validadesList.filter(item => {
-        const itemKey = getRegDateKey(item);
-        const itemVal = formatDateToBR(item.validade);
-        const itemColeta = item.dataColeta ? formatDateToBR(item.dataColeta) : '';
-        if (itemKey === regDateKey) return false;
-        if (formattedDate === '02/10/2026' && (itemVal === '02/10/2026' || itemColeta === '02/10/2026')) return false;
-        return true;
-      });
-
-      setValidadesList(remaining);
-      localStorage.setItem(`validades_${empresaId}`, JSON.stringify(remaining));
-      localStorage.setItem(`armazem_validades_${empresaId}`, JSON.stringify(remaining));
-
-      const deletedDatesKey = `fefo_deleted_coleta_dates_${empresaId}`;
-      let deletedDates: string[] = [];
-      try {
-        deletedDates = JSON.parse(localStorage.getItem(deletedDatesKey) || '[]');
-      } catch (_) {}
-      if (!deletedDates.includes(regDateKey)) deletedDates.push(regDateKey);
-      if (!deletedDates.includes(formattedDate)) deletedDates.push(formattedDate);
-      localStorage.setItem(deletedDatesKey, JSON.stringify(deletedDates));
-
-      fetch('/api/validades', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ validades: remaining, empresaId })
-      }).catch(() => {});
-
-      window.dispatchEvent(new Event('validades_updated'));
-      window.dispatchEvent(new Event('app_data_updated'));
-      window.dispatchEvent(new Event('local_data_changed'));
-
-      toast(`✅ Coleta do dia ${formattedDate} removida com sucesso!`);
-    } catch (e) {
-      console.error(e);
-      alert('Erro ao excluir coleta: ' + e);
-    }
   };
 
   // Expiration entries mapping list
   const getFilteredEntries = () => {
-    let rows = [...validadesList];
+    let rows = filterHistoryForUser(validadesList, user, getRegDateKey);
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
-      rows = rows.filter(r => 
-        String(r.codigo).toLowerCase().includes(q) || 
-        r.descricao.toLowerCase().includes(q) ||
-        (r.bloco || '').toLowerCase().includes(q)
-      );
+      const qDigits = q.replace(/\D/g, '');
+      rows = rows.filter(r => {
+        const codMatch = String(r.codigo).toLowerCase().includes(q);
+        const descMatch = (r.descricao || '').toLowerCase().includes(q);
+        const blocoMatch = (r.bloco || '').toLowerCase().includes(q);
+        const valStr = String(r.validade || '').toLowerCase();
+        const valBr = formatDateToBR(r.validade).toLowerCase();
+        const valDigits = valStr.replace(/\D/g, '') + valBr.replace(/\D/g, '');
+        const valMatch = valStr.includes(q) || valBr.includes(q) || (qDigits.length >= 4 && valDigits.includes(qDigits));
+        const colMatch = String(r.dataColeta || '').toLowerCase().includes(q);
+        return codMatch || descMatch || blocoMatch || valMatch || colMatch;
+      });
     }
 
     if (filterLoc !== 'todos') {
@@ -1331,7 +1276,7 @@ export default function ValidadesPanel({ user, empresa, hideSugerirMelhoria, the
             <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-black ${
               activeTab === 'lista' ? 'bg-white/20 text-white' : 'bg-slate-100 dark:bg-[#0e1217] text-slate-800 dark:text-snow border border-slate-300 dark:border-[#222d3a]'
             }`}>
-              {validadesList.length}
+              {filterHistoryForUser(validadesList, user, getRegDateKey).length}
             </span>
           </button>
 
@@ -1426,18 +1371,6 @@ export default function ValidadesPanel({ user, empresa, hideSugerirMelhoria, the
                 {quebrasFefoEstoque.length}
               </span>
             )}
-          </button>
-
-          <button 
-            type="button"
-            onClick={() => setActiveTab('retiradas')}
-            className={`py-2 px-2.5 rounded-xl font-sans font-bold text-[11px] sm:text-xs uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-1.5 text-center ${
-              activeTab === 'retiradas' 
-                ? 'bg-red-600 text-white shadow-md shadow-red-600/20 font-black' 
-                : 'bg-white dark:bg-[#151b23] text-slate-700 dark:text-[#8fa0b5] hover:text-red-400 hover:bg-slate-50 dark:hover:bg-[#1f2733] border border-slate-200 dark:border-[#222d3a] shadow-xs'
-            }`}
-          >
-            <span>📦 Validades Retiradas</span>
           </button>
         </div>
       </div>
@@ -2112,7 +2045,7 @@ export default function ValidadesPanel({ user, empresa, hideSugerirMelhoria, the
 
                   {sortedRegDateKeys.map(regDateKey => {
                     const rows = grouped[regDateKey];
-                    const isOpen = expandedDates[regDateKey] !== undefined ? !!expandedDates[regDateKey] : (sortedRegDateKeys[0] === regDateKey || sortedRegDateKeys.length === 1);
+                    const isOpen = !!expandedDates[regDateKey];
 
                     let formattedRegDate = regDateKey;
                     try {
@@ -2136,18 +2069,19 @@ export default function ValidadesPanel({ user, empresa, hideSugerirMelhoria, the
                               {rows.length} {rows.length === 1 ? 'lote registrado' : 'lotes registrados'}
                             </span>
                           </div>
-                          <div className="flex items-center gap-2.5 shrink-0">
+                          <div className="flex items-center gap-2 shrink-0">
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleExcluirColetaCompleta(regDateKey);
+                                handleDeleteDateGroup(regDateKey, rows);
                               }}
-                              title={`Remover todos os ${rows.length} lotes desta coleta (${formattedRegDate})`}
-                              className="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-red-500/10 hover:bg-red-500/25 border border-red-500/30 text-red-500 dark:text-red-400 hover:text-red-600 dark:hover:text-red-300 transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+                              title={`Limpar todos os ${rows.length} lotes registrados em ${formattedRegDate}`}
+                              className="px-2.5 py-1 text-[10px] sm:text-[11px] font-bold rounded-lg bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-600 dark:text-red-400 cursor-pointer transition-colors flex items-center gap-1.5 shadow-xs"
                             >
-                              <Trash2 className="w-3.5 h-3.5" />
-                              <span>Remover Coleta</span>
+                              <Trash2 className="w-3 h-3" />
+                              <span className="hidden sm:inline">Limpar Coleta</span>
+                              <span>({rows.length})</span>
                             </button>
                             <div className="flex items-center gap-1.5 text-slate-400 dark:text-[#6a7d92]">
                               <span className="text-[11px] font-semibold hidden xs:inline">{isOpen ? 'Recolher' : 'Expandir'}</span>
@@ -2236,13 +2170,6 @@ export default function ValidadesPanel({ user, empresa, hideSugerirMelhoria, the
                               
                               <div className="flex gap-2 self-end sm:self-auto items-center flex-wrap">
                                 <button 
-                                  onClick={() => handleAbrirRetirada(r)}
-                                  title="Registrar retirada física do armazém e dar baixa como Conferente"
-                                  className="py-1.5 px-3 border border-red-500/50 bg-red-500/20 hover:bg-red-500/30 text-red-200 text-xs font-bold rounded-lg cursor-pointer transition-colors flex items-center gap-1.5"
-                                >
-                                  <span>📦</span> Retirar do Armazém
-                                </button>
-                                <button 
                                   id={`btn-validades-pnc-${r.id}`}
                                   onClick={() => handleSendRowToPnc(r)}
                                   title="Encaminhar este item imediatamente para a Guia de PNC para tratativa"
@@ -2294,19 +2221,6 @@ export default function ValidadesPanel({ user, empresa, hideSugerirMelhoria, the
           validadesList={validadesList} 
           user={user} 
           empresa={empresa} 
-          onRefresh={() => {
-            const saved = localStorage.getItem(`validades_${empresaId}`);
-            if (saved) {
-              try {
-                const rows = JSON.parse(saved);
-                setValidadesList(rows);
-              } catch (e) {}
-            }
-          }}
-        />
-      ) : activeTab === 'retiradas' ? (
-        <ValidadesRetiradasTab 
-          empresaId={empresaId}
           onRefresh={() => {
             const saved = localStorage.getItem(`validades_${empresaId}`);
             if (saved) {
@@ -3439,16 +3353,6 @@ export default function ValidadesPanel({ user, empresa, hideSugerirMelhoria, the
         onSuccess={(msg) => {
           alert(msg);
         }}
-      />
-
-      {/* MODAL 4: RETIRADA FÍSICA DE VALIDADE PELO CONFERENTE (BAIXA DE ESTOQUE) */}
-      <ModalRetiradaValidade
-        isOpen={showRetiradaModal}
-        onClose={() => setShowRetiradaModal(false)}
-        item={retiradaTargetItem}
-        user={user}
-        empresaId={empresaId}
-        onSuccess={handleRetiradaSuccess}
       />
     </div>
   );

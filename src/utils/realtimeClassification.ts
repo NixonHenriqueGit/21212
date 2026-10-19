@@ -147,72 +147,86 @@ export const REALTIME_CLASSIFICATION: Record<string, RealtimeClassificationInfo>
     estrategia: 'cache-json'
   },
   'repack': {
-    nivel: 'NAO_PRECISA_REALTIME',
-    justificativa: 'Apuração e consolidação de perdas de retrabalho por lote/dia.',
-    estrategia: 'cache-json'
+    nivel: 'REALTIME_NECESSARIO',
+    justificativa: 'Apuração e consolidação de lançamentos de retrabalho em tempo real.',
+    estrategia: 'onSnapshot'
+  },
+  'repack_validades': {
+    nivel: 'REALTIME_NECESSARIO',
+    justificativa: 'Lançamentos de validade na bancada de repack em tempo real.',
+    estrategia: 'onSnapshot'
+  },
+  'repack_action_plans': {
+    nivel: 'REALTIME_NECESSARIO',
+    justificativa: 'Planos de ação de repack sincronizados em tempo real.',
+    estrategia: 'onSnapshot'
+  },
+  'repack_a3_boards': {
+    nivel: 'REALTIME_NECESSARIO',
+    justificativa: 'Quadros A3 de repack sincronizados em tempo real.',
+    estrategia: 'onSnapshot'
   },
   'despejo': {
-    nivel: 'NAO_PRECISA_REALTIME',
-    justificativa: 'Registros contábeis de descarte e quebra de estoque.',
-    estrategia: 'cache-json'
+    nivel: 'REALTIME_NECESSARIO',
+    justificativa: 'Registros de descarte e quebra de estoque em tempo real.',
+    estrategia: 'onSnapshot'
   },
   'quebras': {
-    nivel: 'NAO_PRECISA_REALTIME',
-    justificativa: 'Indicadores agregados de quebra diária/mensal.',
-    estrategia: 'cache-json'
+    nivel: 'REALTIME_NECESSARIO',
+    justificativa: 'Indicadores agregados de quebra diária/mensal em tempo real.',
+    estrategia: 'onSnapshot'
   },
   'armazem': {
-    nivel: 'NAO_PRECISA_REALTIME',
+    nivel: 'REALTIME_NECESSARIO',
     justificativa: 'Mapeamento de ruas, níveis e layout físico do depósito.',
-    estrategia: 'cache-json'
+    estrategia: 'onSnapshot'
   },
   'fechamento': {
-    nivel: 'NAO_PRECISA_REALTIME',
-    justificativa: 'Projeção imutável de fechamentos diários consolidados.',
-    estrategia: 'cache-json'
+    nivel: 'REALTIME_NECESSARIO',
+    justificativa: 'Projeção de fechamentos diários consolidados no banco de dados.',
+    estrategia: 'onSnapshot'
   },
   'historico': {
-    nivel: 'NAO_PRECISA_REALTIME',
-    justificativa: 'Registros de datas anteriores armazenados em JSON particionado.',
-    estrategia: 'cache-json'
+    nivel: 'REALTIME_NECESSARIO',
+    justificativa: 'Registros históricos consultados do banco de dados.',
+    estrategia: 'onSnapshot'
   },
   'fechamentos_log': {
-    nivel: 'NAO_PRECISA_REALTIME',
+    nivel: 'REALTIME_NECESSARIO',
     justificativa: 'Audit trail histórico de fechamentos operacionais.',
-    estrategia: 'cache-json'
+    estrategia: 'onSnapshot'
   },
   'relatorios': {
-    nivel: 'NAO_PRECISA_REALTIME',
+    nivel: 'REALTIME_NECESSARIO',
     justificativa: 'Consultas analíticas e relatórios gerenciais.',
-    estrategia: 'cache-json'
+    estrategia: 'onSnapshot'
   },
   'indicadores': {
-    nivel: 'NAO_PRECISA_REALTIME',
+    nivel: 'REALTIME_NECESSARIO',
     justificativa: 'KPIs acumulados do dia/mês.',
-    estrategia: 'cache-json'
+    estrategia: 'onSnapshot'
   },
   'dashboard': {
-    nivel: 'NAO_PRECISA_REALTIME',
+    nivel: 'REALTIME_NECESSARIO',
     justificativa: 'Visão consolidada executiva do dia.',
-    estrategia: 'cache-json'
+    estrategia: 'onSnapshot'
   }
 };
 
 export function getRealtimeInfo(collectionName: string): RealtimeClassificationInfo {
   const norm = collectionName.toLowerCase().trim();
   return REALTIME_CLASSIFICATION[norm] || {
-    nivel: 'NAO_PRECISA_REALTIME',
-    justificativa: 'Coleção padrão não cadastrada como realtime crítico.',
-    estrategia: 'cache-json'
+    nivel: 'REALTIME_NECESSARIO',
+    justificativa: 'Coleção operacional consultada diretamente do banco de dados.',
+    estrategia: 'onSnapshot'
   };
 }
 
-export function isRealtimeNecessario(collectionName: string): boolean {
-  return getRealtimeInfo(collectionName).nivel === 'REALTIME_NECESSARIO';
+export function isRealtimeNecessario(_collectionName: string): boolean {
+  return true;
 }
 
-export function isRealtimePermitido(collectionName: string, forceRealtime = false): boolean {
-  if (forceRealtime) return true;
-  const info = getRealtimeInfo(collectionName);
-  return info.nivel === 'REALTIME_NECESSARIO';
+export function isRealtimePermitido(_collectionName: string, _forceRealtime = false): boolean {
+  // Diretriz do usuário: Sem cache na plataforma, todas as coleções consultam e registram no banco de dados
+  return true;
 }

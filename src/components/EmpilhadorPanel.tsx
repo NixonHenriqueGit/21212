@@ -965,8 +965,14 @@ export default function EmpilhadorPanel({ user, empresa, theme = 'dark' }: Empil
     if (!checklistDone) return [];
     return tasks.filter(t => {
       if (isTaskExpired(t, 5)) return false;
+      const match = isSameCollaborator(t.operador, activeOperatorClean, empresaData.colaboradores);
+      console.log('DEBUG: Task operator match:', {
+        taskOperador: t.operador,
+        activeOperator: activeOperatorClean,
+        match
+      });
       if (!t.operador || t.operador === 'TODOS' || t.operador.toUpperCase().includes('TODOS')) return true;
-      return isSameCollaborator(t.operador, activeOperatorClean, empresaData.colaboradores);
+      return match;
     });
   }, [checklistDone, tasks, activeOperatorClean, empresaData.colaboradores]);
 
@@ -1645,7 +1651,10 @@ export default function EmpilhadorPanel({ user, empresa, theme = 'dark' }: Empil
                             <div>
                               <span className="text-[10px] font-mono text-amber-400 font-bold block mb-1">SKU: {t.codigo}</span>
                               <h5 className="text-xs font-bold text-white leading-tight">{t.descricao}</h5>
-                              <span className="text-[10px] text-slate-400 block mt-1">Despachado por: {t.conferente}</span>
+                              <div className="flex gap-2">
+                                <span className="text-[10px] text-slate-400 block mt-1">Despachado por: {t.conferente}</span>
+                                <span className="text-[10px] font-black text-amber-500 uppercase block mt-1">{t.tipoOperacao || 'R&R'}</span>
+                              </div>
                             </div>
 
                             <div className="flex items-center gap-4">

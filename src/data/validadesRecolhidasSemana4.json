@@ -132,6 +132,28 @@
     "cadastradoEm": "2026-08-28T08:00:00.000Z"
   },
   {
+    "id": "val_1166_sem4_7",
+    "codigo": "1166",
+    "descricao": "SUKITA UVA PET 2L CAIXA C/6",
+    "palhete": 0,
+    "lastro": 0,
+    "caixa": 11,
+    "quantidade": 11,
+    "totalUnities": 11,
+    "totalUnitiesRaw": 11,
+    "validade": "2026-10-02",
+    "lote": "LOT-1166-20261002",
+    "localizacao": "central",
+    "bloco": "C1",
+    "dataColeta": "28/08/2026",
+    "semanaNumero": 4,
+    "mesReferencia": "08",
+    "vidaUtil": 180,
+    "curva": "C",
+    "cadastradoPor": "Conferente CCO",
+    "cadastradoEm": "2026-08-28T08:00:00.000Z"
+  },
+  {
     "id": "val_33212_sem4_8",
     "codigo": "33212",
     "descricao": "SKOL BEATS SENSES PET 1 L SH C/06",

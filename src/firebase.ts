@@ -45,13 +45,13 @@ interface FirebaseConfigExtended {
 const metaEnv = typeof import.meta !== 'undefined' ? (import.meta as any).env : undefined;
 
 const DEFAULT_CONFIG: FirebaseConfigExtended = {
-  apiKey: metaEnv?.VITE_FIREBASE_API_KEY || "AIzaSyC8Xkvh4Nj-VjzzDwqSNjefu3a79Y6ti2A",
-  authDomain: metaEnv?.VITE_FIREBASE_AUTH_DOMAIN || "retorno-de-rota-pau-brasil.firebaseapp.com",
-  projectId: metaEnv?.VITE_FIREBASE_PROJECT_ID || "retorno-de-rota-pau-brasil",
-  storageBucket: metaEnv?.VITE_FIREBASE_STORAGE_BUCKET || "retorno-de-rota-pau-brasil.firebasestorage.app",
-  messagingSenderId: metaEnv?.VITE_FIREBASE_MESSAGING_SENDER_ID || "792483558739",
-  appId: metaEnv?.VITE_FIREBASE_APP_ID || "1:792483558739:web:1bcaba10d2038d7a6ddda6",
-  measurementId: metaEnv?.VITE_FIREBASE_MEASUREMENT_ID || "G-FTGZF84NKM",
+  apiKey: metaEnv?.VITE_FIREBASE_API_KEY || "AIzaSyCU7wOQObjxciIXk8pJG7MHpKV5s5x1Upw",
+  authDomain: metaEnv?.VITE_FIREBASE_AUTH_DOMAIN || "armazem-facil--oficial.firebaseapp.com",
+  projectId: metaEnv?.VITE_FIREBASE_PROJECT_ID || "armazem-facil--oficial",
+  storageBucket: metaEnv?.VITE_FIREBASE_STORAGE_BUCKET || "armazem-facil--oficial.firebasestorage.app",
+  messagingSenderId: metaEnv?.VITE_FIREBASE_MESSAGING_SENDER_ID || "199175774274",
+  appId: metaEnv?.VITE_FIREBASE_APP_ID || "1:199175774274:web:0c4c91259e08877288cddb",
+  measurementId: metaEnv?.VITE_FIREBASE_MEASUREMENT_ID || "G-Q25WX12SWG",
   firestoreDatabaseId: metaEnv?.VITE_FIREBASE_DATABASE_ID || undefined
 };
 
@@ -64,7 +64,7 @@ if (typeof window !== 'undefined') {
   if (savedConfigStr) {
     try {
       const parsed = JSON.parse(savedConfigStr);
-      if (parsed && (parsed.projectId === 'armazemfacil-b2292' || parsed.projectId === 'mesmerizing-rampart-wdzmz' || parsed.projectId?.startsWith('gen-lang-client-') || parsed.projectId === 'armazemrelatorios' || parsed.projectId !== 'retorno-de-rota-pau-brasil')) {
+      if (parsed && (parsed.projectId !== 'armazem-facil--oficial')) {
         // Automatically clear stale cache pointing to previous or uninitialized projects
         localStorage.removeItem('custom_firebase_config');
       } else if (parsed && parsed.apiKey && parsed.projectId) {

@@ -3,25 +3,21 @@ import validadesRecolhidasSemana3Data from '../data/validadesRecolhidasSemana3.j
 import validadesRecolhidasSemana4Data from '../data/validadesRecolhidasSemana4.json';
 import { calcularTotalCaixas } from '../data/coletaPackagingData';
 
-export const DEFAULT_OFFICIAL_VALIDADES_WEEK4: ValidadeRow[] = (validadesRecolhidasSemana4Data as ValidadeRow[])
-  .filter(item => item.id !== 'val_1166_sem4_7')
-  .map((item, idx) => ({
-    ...item,
-    id: item.id || `val_${item.codigo}_sem4_${idx + 1}`,
-    dataColeta: '28/08/2026',
-    semanaNumero: 4,
-    mesReferencia: '08'
-  }));
+export const DEFAULT_OFFICIAL_VALIDADES_WEEK4: ValidadeRow[] = (validadesRecolhidasSemana4Data as ValidadeRow[]).map((item, idx) => ({
+  ...item,
+  id: item.id || `val_${item.codigo}_sem4_${idx + 1}`,
+  dataColeta: '28/08/2026',
+  semanaNumero: 4,
+  mesReferencia: '08'
+}));
 
-export const DEFAULT_OFFICIAL_VALIDADES_WEEK3: ValidadeRow[] = (validadesRecolhidasSemana3Data as ValidadeRow[])
-  .filter(item => item.id !== 'val_1166_sem3_7')
-  .map((item, idx) => ({
-    ...item,
-    id: item.id || `val_${item.codigo}_sem3_${idx + 1}`,
-    dataColeta: '21/08/2026',
-    semanaNumero: 3,
-    mesReferencia: '08'
-  }));
+export const DEFAULT_OFFICIAL_VALIDADES_WEEK3: ValidadeRow[] = (validadesRecolhidasSemana3Data as ValidadeRow[]).map((item, idx) => ({
+  ...item,
+  id: item.id || `val_${item.codigo}_sem3_${idx + 1}`,
+  dataColeta: '21/08/2026',
+  semanaNumero: 3,
+  mesReferencia: '08'
+}));
 
 export function normalizeDateString(dateStr: string): string {
   if (!dateStr) return '';
@@ -104,29 +100,10 @@ export function matchValidade(item: any, target: { codigo?: string; validade?: s
   if (!item || !target) return false;
   if (target._docId && item._docId && String(target._docId) === String(item._docId)) return true;
   if (target.id && item.id && String(target.id) === String(item.id)) return true;
-  
-  const targetCod = String(target.codigo || '').replace(/^0+/, '').trim();
-  const itemCod = String(item.codigo || item.cod || '').replace(/^0+/, '').trim();
-  
-  if (targetCod && itemCod && targetCod === itemCod) {
-    if (target.validade && item.validade) {
-      const targetVal = formatDateToBR(target.validade).trim();
-      const itemVal = formatDateToBR(item.validade).trim();
-      if (targetVal === itemVal) return true;
-      const normTargetVal = normalizeDateString(targetVal);
-      const normItemVal = normalizeDateString(itemVal);
-      if (normTargetVal && normItemVal && normTargetVal === normItemVal) return true;
-    }
-  }
   return false;
 }
 
 export function isValidadeDeleted(item: any, companyId: string = 'demo'): boolean {
-  if (!item) return false;
-  const idStr = String(item.id || item._docId || '');
-  if (idStr === 'val_1166_sem4_7' || idStr === 'val_1166_sem3_7') {
-    return true;
-  }
   try {
     const raw = localStorage.getItem(`fefo_deleted_validades_${companyId}`) || localStorage.getItem('fefo_deleted_validades_global');
     if (!raw) return false;
@@ -483,39 +460,10 @@ export function removeLegacySeedValidades(rows: ValidadeRow[], companyId: string
     const docId = String(r._docId || '');
     const id = String(r.id || '');
     if (docId.startsWith('seed-val-') || id.startsWith('seed-val-')) return false;
-
-    // Purga especificamente os registros legados de sementes antigos
-    if (id === 'val_1166_sem4_7' || id === 'val_1166_sem3_7') {
-      return false;
-    }
     return true;
   });
 
   return filtered;
-}
-
-// Auto cleanup imediato de localStorage apenas dos IDs antigos específicos
-if (typeof window !== 'undefined' && window.localStorage) {
-  try {
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key && (key.startsWith('validades_') || key.startsWith('armazem_validades_'))) {
-        const val = localStorage.getItem(key);
-        if (val && (val.includes('val_1166_sem4_7') || val.includes('val_1166_sem3_7'))) {
-          try {
-            const parsed = JSON.parse(val);
-            if (Array.isArray(parsed)) {
-              const cleaned = parsed.filter(item => {
-                const id = String(item.id || '');
-                return id !== 'val_1166_sem4_7' && id !== 'val_1166_sem3_7';
-              });
-              localStorage.setItem(key, JSON.stringify(cleaned));
-            }
-          } catch (_) {}
-        }
-      }
-    }
-  } catch (_) {}
 }
 
 

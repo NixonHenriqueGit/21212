@@ -21,9 +21,6 @@ import {
 import { addTmrDemand, getStoredTmrDemands, deleteTmrDemand, updateTmrDemandOperators } from '../utils/tmrManager';
 import { Upload, FileSpreadsheet, CheckCircle2, Clock, AlertTriangle, Truck, Play, Check, Filter, Trash2, Edit3, Plus, X, Calendar, Thermometer, Droplets, AlertCircle, ShieldAlert, ShieldCheck, Users, Search, ArrowRight, ExternalLink } from 'lucide-react';
 const ValidadesPanel = lazy(() => import('./ValidadesPanel'));
-import { ModalRetiradaValidade } from './ModalRetiradaValidade';
-import { checkValidadesPendentesRetirada, ValidadeRetiradaRecord } from '../utils/validadesRetiradasManager';
-import { getInitialDefaultValidades, removeLegacySeedValidades } from '../utils/fefoDefaultData';
 import TemperaturaImportExportBar from './TemperaturaImportExportBar';
 import { WorkstationCriticosRecolhimento } from './WorkstationCriticosRecolhimento';
 import { Checklist5SForm, Collaborator5SPerformanceCard } from './Checklist5SModal';
@@ -460,33 +457,6 @@ export default function ConferentePanel({ user, empresa, initialTab, theme = 'da
   }, [initialTab]);
   const [importTableFilter, setImportTableFilter] = useState<'Todos' | 'EFC' | 'EFD' | 'Pernoites'>('Todos');
   const [placaSearchFilter, setPlacaSearchFilter] = useState('');
-
-  // Estados de Validade Crítica / Baixa de Validade pelo Conferente
-  const [showRetiradaModal, setShowRetiradaModal] = useState<boolean>(false);
-  const [retiradaTargetItem, setRetiradaTargetItem] = useState<any | null>(null);
-
-  const validadesListConferente = useMemo(() => {
-    let list = empresaData.validades || [];
-    if (list.length === 0) {
-      try {
-        const raw = localStorage.getItem(`validades_${empresaId}`);
-        if (raw) list = JSON.parse(raw);
-      } catch (_) {}
-    }
-    if (list.length === 0) {
-      list = getInitialDefaultValidades(empresaId);
-    }
-    return removeLegacySeedValidades(list, empresaId);
-  }, [empresaData.validades, empresaId, catalogTrigger]);
-
-  const validadesVencendoHoje = useMemo(() => {
-    return checkValidadesPendentesRetirada(validadesListConferente);
-  }, [validadesListConferente]);
-
-  const handleAbrirModalRetirada = (item: any) => {
-    setRetiradaTargetItem(item);
-    setShowRetiradaModal(true);
-  };
 
   // WLP Shift & Assembly States for Conferente
   const [wlpDataISO, setWlpDataISO] = useState<string>(new Date().toISOString().split('T')[0]);
@@ -1191,7 +1161,8 @@ export default function ConferentePanel({ user, empresa, initialTab, theme = 'da
       criadoEm: new Date().toISOString(),
       iniciadoEm: null,
       finalizadoEm: null,
-      duracaoMin: null
+      duracaoMin: null,
+      tipoOperacao: 'ressuprimento' // Defaulting to ressuprimento
     };
 
     try {
@@ -1331,7 +1302,7 @@ export default function ConferentePanel({ user, empresa, initialTab, theme = 'da
       </div>
 
       {/* QUADRO DE DEMANDAS PENDENTES (RESUMO CONFERENTE) */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="p-3.5 bg-[#151b23] border border-sky-500/30 rounded-xl flex items-center justify-between">
           <div>
             <span className="text-[10px] font-bold text-sky-400 uppercase tracking-wider block">R&R Pendentes</span>
@@ -1370,16 +1341,6 @@ export default function ConferentePanel({ user, empresa, initialTab, theme = 'da
             </span>
           </div>
           <Thermometer className="w-5 h-5 text-amber-400" />
-        </div>
-
-        <div className={`p-3.5 bg-[#151b23] border ${validadesVencendoHoje.length > 0 ? 'border-red-500/80 bg-red-950/30' : 'border-slate-800'} rounded-xl flex items-center justify-between`}>
-          <div>
-            <span className="text-[10px] font-bold text-red-400 uppercase tracking-wider block">Validades Críticas</span>
-            <span className="text-xl font-black text-white font-mono mt-0.5 block">
-              {validadesVencendoHoje.length > 0 ? `${validadesVencendoHoje.length} pend.` : '0 pend.'}
-            </span>
-          </div>
-          <AlertTriangle className={`w-5 h-5 ${validadesVencendoHoje.length > 0 ? 'text-red-400 animate-bounce' : 'text-slate-600'}`} />
         </div>
       </div>
 
@@ -3757,20 +3718,6 @@ export default function ConferentePanel({ user, empresa, initialTab, theme = 'da
       {panelTab === 'acoes' && (
         <GuiaAcoesOperacionais user={user} roleName="Conferente" />
       )}
-
-      {/* MODAL DE RETIRADA FÍSICA DE VALIDADE (BAIXA CONFERENTE) */}
-      <ModalRetiradaValidade
-        isOpen={showRetiradaModal}
-        onClose={() => setShowRetiradaModal(false)}
-        item={retiradaTargetItem}
-        user={user}
-        empresaId={empresaId}
-        onSuccess={() => {
-          setRetiradaTargetItem(null);
-          window.dispatchEvent(new Event('validades_updated'));
-          window.dispatchEvent(new Event('app_data_updated'));
-        }}
-      />
     </div>
   );
 }

@@ -2,7 +2,6 @@ import {
   collection,
   query,
   where,
-  getDocsFromCache,
   getDocsFromServer,
   getDocs,
   onSnapshot,
@@ -140,7 +139,7 @@ export function syncIncremental({
       ? query(colRef, where('empresaId', 'in', targetIds))
       : query(colRef);
 
-    // Consulta direta ao Firestore (Cache desativado)
+    // Consulta direta ao Firestore (sem cache conforme solicitado)
     const startTime = new Date();
     try {
       let serverSnap;
@@ -150,7 +149,7 @@ export function syncIncremental({
         serverSnap = await getDocs(baseQuery);
       }
 
-      if (serverSnap && !serverSnap.empty) {
+      if (serverSnap) {
         recordActualFirestoreReads(serverSnap.docs.length);
         docsMap.clear();
         businessIdToDocKey.clear();
@@ -165,14 +164,12 @@ export function syncIncremental({
       console.warn(`[syncIncremental] Aviso ao sincronizar '${collectionName}':`, err);
       try {
         const fallbackSnap = await getDocs(baseQuery);
-        if (!fallbackSnap.empty) {
-          docsMap.clear();
-          businessIdToDocKey.clear();
-          fallbackSnap.docs.forEach((doc: QueryDocumentSnapshot) => {
-            storeDoc(doc.id, doc.data());
-          });
-          notify();
-        }
+        docsMap.clear();
+        businessIdToDocKey.clear();
+        fallbackSnap.docs.forEach((doc: QueryDocumentSnapshot) => {
+          storeDoc(doc.id, doc.data());
+        });
+        notify();
       } catch (fErr) {
         if (onError) onError(fErr);
       }
@@ -180,12 +177,7 @@ export function syncIncremental({
 
     if (isUnsubscribed) return;
 
-    // 4. Listener em tempo real: SÓ CRIA onSnapshot SE REALTIME FOR NECESSÁRIO
-    const permitRealtime = isRealtimePermitido(collectionName, forceRealtime);
-    if (!permitRealtime) {
-      return;
-    }
-
+    // 4. Listener em tempo real direto com o banco de dados Firestore
     try {
       let debounceTimer: any = null;
       activeUnsub = onSnapshot(
@@ -205,13 +197,13 @@ export function syncIncremental({
               changed = true;
             }
           });
-          if (changed) {
+          if (changed || snap.docs.length !== docsMap.size) {
             recordActualFirestoreReads(snap.docChanges().length);
             if (debounceTimer) clearTimeout(debounceTimer);
             debounceTimer = setTimeout(() => {
               localStorage.setItem(syncKey, new Date().toISOString());
               notify();
-            }, 300);
+            }, 100);
           }
         },
         (err) => {
@@ -225,8 +217,22 @@ export function syncIncremental({
 
   runSync();
 
+  const handleGlobalReload = () => {
+    runSync();
+  };
+  window.addEventListener('empresa-data-reload', handleGlobalReload);
+  if (collectionName === 'repack') {
+    window.addEventListener('repack-updated', handleGlobalReload);
+    window.addEventListener('repack-db-updated', handleGlobalReload);
+  }
+
   return () => {
     isUnsubscribed = true;
+    window.removeEventListener('empresa-data-reload', handleGlobalReload);
+    if (collectionName === 'repack') {
+      window.removeEventListener('repack-updated', handleGlobalReload);
+      window.removeEventListener('repack-db-updated', handleGlobalReload);
+    }
     if (activeUnsub) {
       activeUnsub();
     }

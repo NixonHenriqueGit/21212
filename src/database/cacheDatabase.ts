@@ -35,29 +35,24 @@ export class CacheDatabase {
 
   /**
    * Obtém os dados de uma chave no cache.
+   * Desativado permanentemente: todas as consultas devem ser direcionadas ao banco de dados.
    */
   public async get<T>(collectionOrKey: string, empresaId = 'demo', maxAgeMs?: number): Promise<T[] | null> {
-    const key = this.normalizeKey(collectionOrKey, empresaId);
-    const res = await getHybridCacheCollection<T>(key, true);
-    return res?.data || null;
+    return null;
   }
 
   /**
-   * Obtém a entrada completa de cache com todos os metadados (key, source, createdAt, updatedAt, ttl, version, data).
+   * Obtém a entrada completa de cache.
    */
   public async getEntry<T>(collectionOrKey: string, empresaId = 'demo'): Promise<CacheEntry<T[]> | null> {
-    const key = this.normalizeKey(collectionOrKey, empresaId);
-    const res = await getHybridCacheCollection<T>(key, true);
-    return res?.entry || null;
+    return null;
   }
 
   /**
    * Verifica se uma chave existe no cache local.
    */
   public async has(collectionOrKey: string, empresaId = 'demo'): Promise<boolean> {
-    const key = this.normalizeKey(collectionOrKey, empresaId);
-    const res = await getHybridCacheCollection(key, false);
-    return !!(res && res.data);
+    return false;
   }
 
   /**

@@ -783,8 +783,43 @@ export default function DashboardOverview({
       quebrasPct = Math.min(2.0, Math.max(0.01, Math.round((totalQuebrasCaixas / Math.max(100, (totalPickingPaletes || 10) * 30)) * 10000) / 100));
     }
 
-    // 4. FEFO / Validades (from empresaData.validades)
-    const validadesRows = empresaData.validades || [];
+    // 4. FEFO / Validades (sincronizado com a última coleta de validades do conferente)
+    const rawValidades = empresaData.validades || [];
+    let validadesRows = rawValidades;
+    if (rawValidades.length > 0) {
+      const dateKeys = Array.from(new Set(rawValidades.map(v => {
+        const raw = v.cadastradoEm || (v as any).dataISO || (v as any).dataRegistro || (v as any).criadoEm || v.dataColeta;
+        if (!raw) return '';
+        const s = String(raw).trim();
+        if (s.includes('T')) return s.split('T')[0];
+        if (s.includes('-') && s.length >= 10) return s.slice(0, 10);
+        if (s.includes('/')) {
+          const parts = s.split('/');
+          if (parts.length === 3) return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+        }
+        return '';
+      }).filter(Boolean))).sort().reverse();
+      if (dateKeys.length > 0) {
+        const latestKey = dateKeys[0];
+        const latestItems = rawValidades.filter(v => {
+          const raw = v.cadastradoEm || (v as any).dataISO || (v as any).dataRegistro || (v as any).criadoEm || v.dataColeta;
+          if (!raw) return false;
+          const s = String(raw).trim();
+          if (s.includes(latestKey)) return true;
+          if (s.includes('/')) {
+            const parts = s.split('/');
+            if (parts.length === 3) {
+              const iso = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+              return iso === latestKey;
+            }
+          }
+          return false;
+        });
+        if (latestItems.length > 0) {
+          validadesRows = latestItems;
+        }
+      }
+    }
     const criticosFefo = validadesRows.filter(v => Number(v.diasParaVencer || 99) <= 15).length;
     let fefoCompliancePct = 99.8;
     if (validadesRows.length > 0) {

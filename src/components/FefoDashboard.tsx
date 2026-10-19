@@ -1117,18 +1117,78 @@ export default function FefoDashboard({
     };
   }, [companyId]);
 
-  // Inicializar seleção com todos os lotes coletados caso ainda não tenha sido customizado
+  // Lista de datas de coletas disponíveis ordenadas da mais recente para a mais antiga
+  const availableColetaDates = useMemo(() => {
+    const datesMap = new Map<string, { key: string; label: string; count: number }>();
+    (actualValidades || []).forEach((item, idx) => {
+      const { isoDate, displayDate } = getValidadeDateInfo(item);
+      if (isoDate) {
+        if (!datesMap.has(isoDate)) {
+          datesMap.set(isoDate, { key: isoDate, label: displayDate, count: 0 });
+        }
+        datesMap.get(isoDate)!.count += 1;
+      }
+    });
+    return Array.from(datesMap.values()).sort((a, b) => b.key.localeCompare(a.key));
+  }, [actualValidades]);
+
+  // Inicializar seleção: por padrão, sincroniza automaticamente com a ÚLTIMA COLETA DO CONFERENTE (mais recente)
   useEffect(() => {
     if (!hasInitializedSelection && actualValidades.length > 0) {
-      const allKeys = new Set<string>();
-      actualValidades.forEach((item, idx) => {
-        allKeys.add(getValidadeUniqueId(item, idx));
-      });
-      setSelectedValidadesKeys(allKeys);
-      setHasInitializedSelection(true);
-      saveSharedValidadesSelection(companyId, allKeys, user?.nome || 'Sistema');
+      handleSelectLatestValidadesOnly();
     }
-  }, [actualValidades, companyId, hasInitializedSelection, user?.nome]);
+  }, [actualValidades, companyId, hasInitializedSelection]);
+
+  // Identificador do modo de filtro de coleta atualmente ativo
+  const currentColetaFilterValue = useMemo(() => {
+    if (availableColetaDates.length === 0) return 'todas';
+    if (selectedValidadesKeys.size >= actualValidades.length) return 'todas';
+    const latestDate = availableColetaDates[0]?.key;
+    if (!latestDate) return 'todas';
+    
+    // Verifica se exatamente a última coleta está selecionada
+    const latestKeys = new Set<string>();
+    actualValidades.forEach((item, idx) => {
+      const { isoDate } = getValidadeDateInfo(item);
+      if (isoDate === latestDate) {
+        latestKeys.add(getValidadeUniqueId(item, idx));
+      }
+    });
+    
+    let isLatestExact = latestKeys.size > 0 && selectedValidadesKeys.size === latestKeys.size;
+    if (isLatestExact) {
+      for (const k of latestKeys) {
+        if (!selectedValidadesKeys.has(k)) {
+          isLatestExact = false;
+          break;
+        }
+      }
+    }
+    if (isLatestExact) return 'latest';
+
+    // Verifica se coincide com alguma data específica
+    for (const c of availableColetaDates) {
+      const dateKeys = new Set<string>();
+      actualValidades.forEach((item, idx) => {
+        const { isoDate } = getValidadeDateInfo(item);
+        if (isoDate === c.key) {
+          dateKeys.add(getValidadeUniqueId(item, idx));
+        }
+      });
+      if (dateKeys.size > 0 && selectedValidadesKeys.size === dateKeys.size) {
+        let match = true;
+        for (const k of dateKeys) {
+          if (!selectedValidadesKeys.has(k)) {
+            match = false;
+            break;
+          }
+        }
+        if (match) return c.key;
+      }
+    }
+
+    return 'custom';
+  }, [availableColetaDates, selectedValidadesKeys, actualValidades]);
 
   const handleToggleValidadeKey = (key: string) => {
     setSelectedValidadesKeys(prev => {
@@ -2003,8 +2063,9 @@ export default function FefoDashboard({
     if (avgStockAge < 60) faixaStockAge = 'critico';
     else if (avgStockAge <= 75) faixaStockAge = 'atencao';
 
-    const quebrasEstoque = calcularQuebrasFefoEstoqueXEstoque(actualValidades);
-    const quebrasPicking = calcularQuebrasFefoEstoqueXPicking(actualValidades);
+    const sourceValidadesForQuebras = validadesFiltradas.length > 0 ? validadesFiltradas : actualValidades;
+    const quebrasEstoque = calcularQuebrasFefoEstoqueXEstoque(sourceValidadesForQuebras);
+    const quebrasPicking = calcularQuebrasFefoEstoqueXPicking(sourceValidadesForQuebras);
     const totalQuebrasDetectadas = quebrasEstoque.length + quebrasPicking.length;
 
     const fefoDemands = getStoredFefoDemands(companyId);
@@ -3060,6 +3121,36 @@ export default function FefoDashboard({
                 <span className="text-purple-600 font-extrabold">🎯 Contagem Ativa:</span>
                 <strong className="font-mono text-purple-950 font-black">{activeCountDate}</strong>
               </span>
+
+              {/* Seletor Rápido: Última Coleta do Conferente */}
+              {availableColetaDates.length > 0 && (
+                <div className="flex items-center gap-1.5 bg-purple-100 text-purple-950 border border-purple-400/80 rounded-lg px-2.5 py-1 shadow-2xs">
+                  <span className="text-[11px] font-black text-purple-800 uppercase tracking-wider flex items-center gap-1 shrink-0">
+                    <Calendar className="w-3.5 h-3.5 text-purple-700" /> Coleta Conferente:
+                  </span>
+                  <select
+                    value={currentColetaFilterValue}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (v === 'latest') handleSelectLatestValidadesOnly();
+                      else if (v === 'todas') handleSelectAllValidades();
+                      else handleSelectOnlyThisDate(v);
+                    }}
+                    className="bg-transparent text-xs text-purple-950 font-bold outline-none cursor-pointer"
+                    title="Selecione a coleta do conferente que deseja analisar e refletir em todo o dashboard"
+                  >
+                    <option value="latest">⭐ Última Coleta ({availableColetaDates[0]?.label}) — {availableColetaDates[0]?.count || 0} lotes</option>
+                    <option value="todas">📋 Todas as Coletas ({actualValidades.length} lotes)</option>
+                    {availableColetaDates.map(c => (
+                      <option key={c.key} value={c.key}>📅 Coleta de {c.label} ({c.count} {c.count === 1 ? 'lote' : 'lotes'})</option>
+                    ))}
+                    {currentColetaFilterValue === 'custom' && (
+                      <option value="custom">🔍 Seleção Personalizada ({selectedValidadesKeys.size} lotes)</option>
+                    )}
+                  </select>
+                </div>
+              )}
+
               <span className="text-[10px] font-black bg-amber-100 text-amber-900 border border-amber-300 px-2.5 py-1 rounded-md">
                 {validadesRecolhidasDeduplicadas.length} Registros com Estoque
               </span>
@@ -3573,7 +3664,7 @@ export default function FefoDashboard({
       {activeTab === 'estoque-picking' && (
         <div className="w-full">
           <FefoEstoqueXPickingTab
-            validadesList={actualValidades}
+            validadesList={validadesFiltradas.length > 0 ? validadesFiltradas : actualValidades}
             user={user}
             empresa={empresa}
             onRefresh={() => (empresaData as any)?.refetchValidades?.() || (empresaData as any)?.refreshAllData?.()}
@@ -3587,7 +3678,7 @@ export default function FefoDashboard({
       {activeTab === 'stock-age' && (
         <div className="w-full">
           <StockAgeIndexTab
-            validadesList={actualValidades}
+            validadesList={validadesFiltradas.length > 0 ? validadesFiltradas : actualValidades}
             user={user}
             empresa={empresa}
             onRefresh={() => (empresaData as any)?.refetchValidades?.() || (empresaData as any)?.refreshAllData?.()}
@@ -3601,7 +3692,7 @@ export default function FefoDashboard({
       {activeTab === 'futuro-shelf' && (
         <div className="w-full">
           <FuturoShelfTab
-            validadesList={actualValidades}
+            validadesList={validadesFiltradas.length > 0 ? validadesFiltradas : actualValidades}
             user={user}
             empresa={empresa}
             onRefresh={() => (empresaData as any)?.refetchValidades?.() || (empresaData as any)?.refreshAllData?.()}
@@ -3676,7 +3767,7 @@ export default function FefoDashboard({
       {(activeTab === 'pnc' || activeTab === 'shelf-pnc' || activeTab === 'shelf-life') && (
         <div className="w-full">
           <ShelfLifePncTab
-            validadesList={actualValidades}
+            validadesList={validadesFiltradas.length > 0 ? validadesFiltradas : actualValidades}
             user={user}
             empresa={empresa}
             initialSubTab={(initialSubTab as any) || (activeTab === 'shelf-life' ? 'shelf' : undefined)}
@@ -3692,7 +3783,7 @@ export default function FefoDashboard({
       {activeTab === 'estoque-estoque' && (
         <div className="w-full">
           <FefoEstoqueXEstoqueTab
-            validadesList={actualValidades}
+            validadesList={validadesFiltradas.length > 0 ? validadesFiltradas : actualValidades}
             user={user}
             empresa={empresa}
             onRefresh={() => (empresaData as any)?.refetchValidades?.() || (empresaData as any)?.refreshAllData?.()}

@@ -63,43 +63,25 @@ export class DatabaseRouter {
   }
 
   // =========================================================================
-  // 1. DADOS: Consulta direta ao Firestore (Cache desativado a pedido)
+  // 1. DADOS: Consulta direta ao Firestore (100% nativo)
   // =========================================================================
   public async getHistorico<T extends { id?: string | number; _docId?: string | number }>(
     collectionName: string,
     empresaId = 'demo',
     options?: QueryOptions<T>
   ): Promise<T[]> {
-    try {
-      const remote = await firestoreDb.getList<T>(collectionName, empresaId, options);
-      if (remote && remote.length > 0) {
-        return remote;
-      }
-    } catch (err) {
-      console.warn(`[DatabaseRouter] Erro ao buscar no Firestore para ${collectionName}:`, err);
-    }
-    const jsonRecords = await jsonDb.getTable<T>(collectionName, empresaId, options);
-    return this.applyInMemoryFilters(jsonRecords, options);
+    return firestoreDb.getList<T>(collectionName, empresaId, options);
   }
 
   // =========================================================================
-  // 2. DADOS GERAIS: Consulta direta ao Firestore
+  // 2. DADOS GERAIS: Consulta direta ao Firestore (100% nativo)
   // =========================================================================
   public async getNaoCritico<T extends { id?: string | number; _docId?: string | number }>(
     collectionName: string,
     empresaId = 'demo',
     options?: QueryOptions<T>
   ): Promise<T[]> {
-    try {
-      const serverItems = await firestoreDb.getList<T>(collectionName, empresaId, options);
-      if (serverItems && serverItems.length > 0) {
-        return serverItems;
-      }
-    } catch (err) {
-      console.warn(`[DatabaseRouter] Firestore inacessível para ${collectionName}:`, err);
-    }
-    const local = await jsonDb.getTable<T>(collectionName, empresaId, options);
-    return this.applyInMemoryFilters(local, options);
+    return firestoreDb.getList<T>(collectionName, empresaId, options);
   }
 
   // =========================================================================
@@ -109,8 +91,7 @@ export class DatabaseRouter {
     collectionName: string,
     empresaId = 'demo',
     callback: (items: T[]) => void,
-    onError?: (err: any) => void,
-    forceRealtime = false
+    onError?: (err: any) => void
   ): () => void {
     return firestoreDb.subscribe<T>(
       collectionName,
@@ -123,7 +104,7 @@ export class DatabaseRouter {
   }
 
   /**
-   * Subscription para documento único em tempo real
+   * Subscription para documento único em tempo real diretamente do Firestore
    */
   public subscribeDoc<T extends { id?: string | number; _docId?: string | number }>(
     collectionName: string,
@@ -132,30 +113,16 @@ export class DatabaseRouter {
     onError?: (err: any) => void
   ): () => void {
     const strDocId = String(docId);
-
-    // 1. Carrega do Cache/JSON imediatamente
-    this.getById<T>(collectionName, strDocId).then(local => {
-      if (local) callback(local);
-    }).catch(() => {});
-
-    // 2. Listener Firestore
     return firestoreDb.subscribeDoc<T>(
       collectionName,
       strDocId,
-      (data) => {
-        if (data) {
-          this.updateCacheWithRecord(collectionName, data, 'demo');
-          jsonDb.upsertRecord(collectionName, data, 'demo');
-        }
-        callback(data);
-      },
+      callback,
       onError
     );
   }
 
   // =========================================================================
-  // 4. REGRA DE PRIORIDADE: DADO INEXISTENTE / BUSCA GERAL
-  // Cache -> JSON -> Firestore -> Atualizar Cache -> Disponibilizar para aplicação
+  // 4. CONSULTA DIRETA AO FIRESTORE (SEM CACHE E SEM ARQUIVOS JSON)
   // =========================================================================
   public async getList<T extends { id?: string | number; _docId?: string | number }>(
     collectionName: string,
@@ -164,186 +131,35 @@ export class DatabaseRouter {
   ): Promise<T[]> {
     const queryKey = `getList:${empresaId}:${collectionName}:${JSON.stringify(options || {})}`;
     return this.deduplicateQuery<T[]>(queryKey, async () => {
-      const classification: DataClassification = 
-        options?.classification || 
-        (options?.isHistorico ? 'historico' : options?.isNonCritical ? 'nao-critico' : 'padrao');
-
-      // Desvio para regra de histórico estrito
-      if (classification === 'historico') {
-        return this.getHistorico<T>(collectionName, empresaId, options);
-      }
-
-      // Desvio para regra de não-crítico
-      if (classification === 'nao-critico') {
-        return this.getNaoCritico<T>(collectionName, empresaId, options);
-      }
-
-      // Fluxo Padrão / Dado Inexistente:
-      // Passo 1: Cache
-      if (!options?.forceServer) {
-        const cached = await cacheDb.get<T>(collectionName, empresaId, options?.ttlMs);
-        if (cached && cached.length > 0) {
-          cacheDb.recordAvoided(cached.length);
-          return this.applyInMemoryFilters(cached, options);
-        }
-      }
-
-      // Passo 2: JSON Local
-      if (!options?.forceServer) {
-        const localData = await jsonDb.getTable<T>(collectionName, empresaId, options);
-        if (localData && localData.length > 0) {
-          cacheDb.recordAvoided(localData.length);
-          cacheDb.set(collectionName, localData, empresaId, options?.ttlMs);
-          return this.applyInMemoryFilters(localData, options);
-        }
-      }
-
-      // Se especificado somente cache/offline, encerra aqui
-      if (options?.useCacheOnly) {
-        return [];
-      }
-
-      // Passo 3: Firestore
-      try {
-        const firestoreItems = await firestoreDb.getList<T>(collectionName, empresaId, options);
-        if (firestoreItems && firestoreItems.length > 0) {
-          cacheDb.recordActualReads(firestoreItems.length);
-          // Passo 4: Atualizar Cache e JSON
-          cacheDb.set(collectionName, firestoreItems, empresaId, options?.ttlMs, 'firestore');
-          await jsonDb.saveTable(collectionName, firestoreItems, empresaId);
-          // Passo 5: Disponibilizar para aplicação
-          return firestoreItems;
-        }
-      } catch (err) {
-        console.warn(`[DatabaseRouter] Firestore inacessível para ${collectionName}, tentando dados locais:`, err);
-      }
-
-      // Fallback final JSON
-      const fallbackData = await jsonDb.getTable<T>(collectionName, empresaId, options);
-      if (fallbackData && fallbackData.length > 0) {
-        cacheDb.set(collectionName, fallbackData, empresaId, undefined, 'json');
-        return fallbackData;
-      }
-
-      return [];
+      return firestoreDb.getList<T>(collectionName, empresaId, options);
     });
   }
 
   /**
-   * Busca dados paginados eficientemente usando cursores (limit, orderBy, startAfter).
-   * Evita baixar coleções inteiras para depois paginar/filtrar no React.
+   * Busca dados paginados eficientemente usando cursores do Firestore
    */
   public async getPaginated<T extends { id?: string | number; _docId?: string | number }>(
     collectionName: string,
     empresaId = 'demo',
     options?: QueryOptions<T>
   ): Promise<PaginatedResult<T>> {
-    const pageSize = options?.pageSize || options?.limitCount || 25;
-
-    // 1. Se for histórico ou useCacheOnly, busca do JSON com paginação em memória do snapshot local
-    if (options?.isHistorico || options?.classification === 'historico' || options?.useCacheOnly) {
-      const localData = await jsonDb.getTable<T>(collectionName, empresaId, options);
-      const filtered = this.applyInMemoryFilters(localData || [], options);
-      
-      let startIndex = 0;
-      if (options?.startAfterValue !== undefined && options?.orderByField) {
-        const orderField = options.orderByField;
-        startIndex = filtered.findIndex(item => (item as any)[orderField] === options.startAfterValue) + 1;
-        if (startIndex < 0) startIndex = 0;
-      }
-      
-      const paged = filtered.slice(startIndex, startIndex + pageSize);
-      const hasMore = (startIndex + pageSize) < filtered.length;
-      const lastItem = paged.length > 0 ? paged[paged.length - 1] : undefined;
-      const lastValue = lastItem && options?.orderByField ? (lastItem as any)[options.orderByField] : lastItem?.id;
-
-      return {
-        items: paged,
-        lastVisibleValue: lastValue,
-        hasMore,
-        pageSize,
-        totalCount: filtered.length,
-        source: 'json'
-      };
-    }
-
-    // 2. Consulta Firestore usando paginação nativa por cursores (startAfter + limit + orderBy)
-    try {
-      const result = await firestoreDb.getPaginated<T>(collectionName, empresaId, options);
-      if (result.items.length > 0) {
-        cacheDb.recordActualReads(result.items.length);
-      }
-      return result;
-    } catch (err) {
-      console.warn(`[DatabaseRouter] Erro na paginação do Firestore para ${collectionName}, fallback para JSON:`, err);
-      // Fallback para JSON local
-      const localData = await jsonDb.getTable<T>(collectionName, empresaId, options);
-      const filtered = this.applyInMemoryFilters(localData || [], options);
-      const paged = filtered.slice(0, pageSize);
-      return {
-        items: paged,
-        hasMore: filtered.length > pageSize,
-        pageSize,
-        totalCount: filtered.length,
-        source: 'json'
-      };
-    }
+    return firestoreDb.getPaginated<T>(collectionName, empresaId, options);
   }
 
   /**
-   * Busca item por ID seguindo a regra Cache -> JSON -> Firestore -> Atualizar Cache -> Retornar
+   * Busca item por ID diretamente no Firestore
    */
   public async getById<T extends { id?: string | number; _docId?: string | number }>(
     collectionName: string,
     id: string | number,
-    empresaId = 'demo',
-    options?: { ttlMs?: number; forceServer?: boolean }
+    empresaId = 'demo'
   ): Promise<T | null> {
     const strId = String(id);
-
-    // 1. Cache
-    if (!options?.forceServer) {
-      const cached = await cacheDb.get<T>(collectionName, empresaId);
-      if (cached) {
-        const found = cached.find(item => String(item.id || item._docId) === strId);
-        if (found) {
-          cacheDb.recordAvoided(1);
-          return found;
-        }
-      }
-    }
-
-    // 2. JSON Local
-    if (!options?.forceServer) {
-      const local = await jsonDb.getById<T>(collectionName, strId, empresaId);
-      if (local) {
-        cacheDb.recordAvoided(1);
-        await this.updateCacheWithRecord(collectionName, local, empresaId);
-        return local;
-      }
-    }
-
-    // 3. Firestore
-    try {
-      const serverItem = await firestoreDb.getById<T>(collectionName, strId, empresaId);
-      if (serverItem) {
-        cacheDb.recordActualReads(1);
-        // 4. Atualizar Cache e JSON
-        await this.updateCacheWithRecord(collectionName, serverItem, empresaId);
-        await jsonDb.upsertRecord(collectionName, serverItem, empresaId);
-        // 5. Disponibilizar para a aplicação
-        return serverItem;
-      }
-    } catch (err) {
-      console.warn(`[DatabaseRouter] Erro ao buscar ID ${strId} no Firestore para ${collectionName}:`, err);
-    }
-
-    return null;
+    return firestoreDb.getById<T>(collectionName, strId, empresaId);
   }
 
   // =========================================================================
-  // OPERAÇÕES DE MUTAÇÃO (CREATE, UPDATE, DELETE, BATCH)
-  // Salva no Firestore e espelha imediatamente no Cache e JSON local
+  // OPERAÇÕES DE MUTAÇÃO (CREATE, UPDATE, DELETE, BATCH) - 100% FIRESTORE
   // =========================================================================
 
   public async create<T extends { id?: string | number; _docId?: string | number }>(
@@ -352,26 +168,7 @@ export class DatabaseRouter {
     empresaId = 'demo',
     customDocId?: string
   ): Promise<T> {
-    let createdItem: T;
-    try {
-      createdItem = await firestoreDb.create<T>(collectionName, data, empresaId, customDocId);
-    } catch (err) {
-      console.warn(`[DatabaseRouter] Firestore offline, persistindo localmente em JSON:`, err);
-      const generatedId = customDocId || `local_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
-      createdItem = {
-        id: generatedId,
-        _docId: generatedId,
-        ...data,
-        empresaId,
-        _localOnly: true,
-        _criadoEm: new Date().toISOString()
-      } as unknown as T;
-    }
-
-    await jsonDb.upsertRecord(collectionName, createdItem, empresaId);
-    await this.updateCacheWithRecord(collectionName, createdItem, empresaId);
-
-    return createdItem;
+    return firestoreDb.create<T>(collectionName, data, empresaId, customDocId);
   }
 
   public async update<T extends { id?: string | number; _docId?: string | number }>(
@@ -380,34 +177,11 @@ export class DatabaseRouter {
     data: Partial<T>,
     empresaId = 'demo'
   ): Promise<void> {
-    const existing = (await this.getById<T>(collectionName, id, empresaId)) || ({} as T);
-    const updated = { ...existing, ...data, id, _docId: id } as T;
-
-    await jsonDb.upsertRecord(collectionName, updated, empresaId);
-    await this.updateCacheWithRecord(collectionName, updated, empresaId);
-
-    try {
-      await firestoreDb.update(collectionName, String(id), data, empresaId);
-    } catch (err) {
-      console.warn(`[DatabaseRouter] Firestore update offline para ${collectionName}:`, err);
-    }
+    return firestoreDb.update(collectionName, String(id), data, empresaId);
   }
 
   public async delete(collectionName: string, id: string | number, empresaId = 'demo'): Promise<void> {
-    await jsonDb.deleteRecord(collectionName, id, empresaId);
-    
-    // Atualiza Cache
-    const cached = await cacheDb.get<any>(collectionName, empresaId);
-    if (cached) {
-      const filtered = cached.filter((i: any) => String(i.id || i._docId) !== String(id));
-      cacheDb.set(collectionName, filtered, empresaId);
-    }
-
-    try {
-      await firestoreDb.delete(collectionName, String(id), empresaId);
-    } catch (err) {
-      console.warn(`[DatabaseRouter] Firestore delete pendente para ${collectionName}:`, err);
-    }
+    return firestoreDb.delete(collectionName, String(id), empresaId);
   }
 
   public async batchUpsert<T extends { id?: string | number; _docId?: string | number }>(
@@ -415,14 +189,7 @@ export class DatabaseRouter {
     items: T[],
     empresaId = 'demo'
   ): Promise<void> {
-    await jsonDb.saveTable(collectionName, items, empresaId);
-    cacheDb.set(collectionName, items, empresaId);
-
-    try {
-      await firestoreDb.batchUpsert(collectionName, items, empresaId);
-    } catch (err) {
-      console.warn(`[DatabaseRouter] Firestore batch upsert pendente para ${collectionName}:`, err);
-    }
+    return firestoreDb.batchUpsert(collectionName, items, empresaId);
   }
 
   /**
@@ -438,66 +205,18 @@ export class DatabaseRouter {
   }
 
   /**
-   * Retorna métricas de leituras economizadas e eficiência de cache
+   * Retorna métricas do banco de dados Firestore
    */
   public getMetrics(): DatabaseMetrics {
-    return cacheDb.getMetrics();
-  }
-
-  private async updateCacheWithRecord<T extends { id?: string | number; _docId?: string | number }>(
-    collectionName: string,
-    record: T,
-    empresaId: string
-  ): Promise<void> {
-    const cached = (await cacheDb.get<T>(collectionName, empresaId)) || [];
-    const idx = cached.findIndex(i => String(i.id || i._docId) === String(record.id || record._docId));
-    if (idx >= 0) {
-      cached[idx] = record;
-    } else {
-      cached.unshift(record);
-    }
-    cacheDb.set(collectionName, cached, empresaId);
-  }
-
-  private applyInMemoryFilters<T>(items: T[], options?: QueryOptions<T>): T[] {
-    let result = [...items];
-
-    if (options?.filters && options.filters.length > 0) {
-      for (const filter of options.filters) {
-        result = result.filter(item => {
-          const val = (item as any)[filter.field];
-          switch (filter.operator) {
-            case '==': return val === filter.value;
-            case '!=': return val !== filter.value;
-            case '<': return val < filter.value;
-            case '<=': return val <= filter.value;
-            case '>': return val > filter.value;
-            case '>=': return val >= filter.value;
-            case 'array-contains': return Array.isArray(val) && val.includes(filter.value);
-            case 'in': return Array.isArray(filter.value) && filter.value.includes(val);
-            default: return true;
-          }
-        });
-      }
-    }
-
-    if (options?.orderByField) {
-      const field = options.orderByField;
-      const dir = options.orderDirection === 'desc' ? -1 : 1;
-      result.sort((a, b) => {
-        const valA = (a as any)[field];
-        const valB = (b as any)[field];
-        if (valA < valB) return -1 * dir;
-        if (valA > valB) return 1 * dir;
-        return 0;
-      });
-    }
-
-    if (options?.limitCount && options.limitCount > 0) {
-      result = result.slice(0, options.limitCount);
-    }
-
-    return result;
+    return {
+      readsAvoided: 0,
+      actualReads: 0,
+      cacheHits: 0,
+      cacheMisses: 0,
+      costSavedUSD: 0,
+      costCurrentUSD: 0,
+      economyPercent: 0
+    };
   }
 }
 

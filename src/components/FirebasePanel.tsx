@@ -1392,7 +1392,7 @@ export default function FirebasePanel({ theme }: FirebasePanelProps = {}) {
               type="text" 
               value={authDomain} 
               onChange={(e) => setAuthDomain(e.target.value)}
-              placeholder="Ex: retorno-de-rota-pau-brasil.firebaseapp.com"
+              placeholder="Ex: armazem-facil--oficial.firebaseapp.com"
               className="w-full bg-[#07090d] border border-[#222d3a] rounded-lg px-3 py-2 text-xs text-snow font-mono focus:border-[#f5a623] focus:outline-none"
             />
           </div>
@@ -1405,7 +1405,7 @@ export default function FirebasePanel({ theme }: FirebasePanelProps = {}) {
               type="text" 
               value={projectId} 
               onChange={(e) => setProjectId(e.target.value)}
-              placeholder="Ex: retorno-de-rota-pau-brasil"
+              placeholder="Ex: armazem-facil--oficial"
               className="w-full bg-[#07090d] border border-[#222d3a] rounded-lg px-3 py-2 text-xs text-snow font-mono focus:border-[#f5a623] focus:outline-none"
             />
           </div>
@@ -1418,7 +1418,7 @@ export default function FirebasePanel({ theme }: FirebasePanelProps = {}) {
               type="text" 
               value={storageBucket} 
               onChange={(e) => setStorageBucket(e.target.value)}
-              placeholder="Ex: retorno-de-rota-pau-brasil.firebasestorage.app"
+              placeholder="Ex: armazem-facil--oficial.firebasestorage.app"
               className="w-full bg-[#07090d] border border-[#222d3a] rounded-lg px-3 py-2 text-xs text-snow font-mono focus:border-[#f5a623] focus:outline-none"
             />
           </div>

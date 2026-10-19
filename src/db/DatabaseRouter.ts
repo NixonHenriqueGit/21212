@@ -12,7 +12,6 @@ import {
   doc,
   getDoc,
   getDocs,
-  getDocsFromCache,
   getDocsFromServer,
   setDoc,
   addDoc,
@@ -164,13 +163,18 @@ export class DatabaseRouter {
       const cacheKey = `col:${empresaId}:${collectionName}`;
       const ttl = options.ttlMs || 1000 * 60 * 30; // 30 minutos
 
-      // Consulta Direta ao Firestore (Cache desativado a pedido do usuário)
+      // Consulta Direta ao Firestore (sem cache conforme solicitado)
       try {
         const colRef = collection(db, collectionName);
         const constraints: QueryConstraint[] = [];
         
-        if (empresaId && empresaId !== 'all') {
-          constraints.push(where('empresaId', '==', empresaId));
+        const targetEmpresaId = (!empresaId || empresaId === 'emp_dono') ? 'demo' : empresaId;
+        const targetIds = (targetEmpresaId && targetEmpresaId !== 'all')
+          ? (targetEmpresaId === 'demo' ? ['demo', 'emp_dono'] : [targetEmpresaId, 'demo'])
+          : null;
+
+        if (targetIds && targetIds.length > 0) {
+          constraints.push(where('empresaId', 'in', targetIds));
         }
 
         if (options.filters) {
@@ -191,27 +195,13 @@ export class DatabaseRouter {
         let snap;
 
         try {
-          const fetchPromise = Promise.race([
-            getDocsFromServer(q),
-            new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout_server')), 1500))
-          ]);
-          snap = await fetchPromise;
+          snap = await getDocsFromServer(q);
           recordActualFirestoreReads(snap.docs.length);
           monitoringService.recordFirestoreRead(snap.docs.length, collectionName, 'getDocs');
         } catch (_) {
-          try {
-            const cachePromise = Promise.race([
-              getDocs(q),
-              new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout_cache')), 1000))
-            ]);
-            snap = await cachePromise;
-            recordActualFirestoreReads(snap.docs.length);
-            monitoringService.recordFirestoreRead(snap.docs.length, collectionName, 'getDocs');
-          } catch {
-            const fb = await getJsonTable<T>(empresaId, collectionName);
-            monitoringService.recordJsonHit(fb.length, collectionName);
-            return fb;
-          }
+          snap = await getDocs(q);
+          recordActualFirestoreReads(snap.docs.length);
+          monitoringService.recordFirestoreRead(snap.docs.length, collectionName, 'getDocs');
         }
 
         const serverDocs: T[] = snap.docs.map(d => ({
@@ -220,13 +210,41 @@ export class DatabaseRouter {
           ...d.data()
         } as unknown as T));
 
+        // Para a coleção de repack, mescla também com registros do banco de dados do servidor
+        if (collectionName === 'repack' && typeof window !== 'undefined') {
+          try {
+            const apiRes = await fetch('/api/repack');
+            if (apiRes.ok) {
+              const apiJson = await apiRes.json();
+              if (apiJson && Array.isArray(apiJson.repack)) {
+                const existingIds = new Set(serverDocs.map(d => String(d.id || d._docId)));
+                apiJson.repack.forEach((r: any) => {
+                  const rId = String(r.id || r._docId);
+                  if (rId && !existingIds.has(rId)) {
+                    serverDocs.push(r as T);
+                    existingIds.add(rId);
+                  }
+                });
+              }
+            }
+          } catch (_) {}
+        }
+
         return serverDocs;
       } catch (error) {
         console.warn(`[DatabaseRouter] Erro na consulta do Firestore para '${collectionName}':`, error);
-        // Fallback de contingência somente em caso de falha de rede
-        const fb = await getJsonTable<T>(empresaId, collectionName);
-        monitoringService.recordJsonHit(fb.length, collectionName);
-        return fb;
+        if (collectionName === 'repack' && typeof window !== 'undefined') {
+          try {
+            const apiRes = await fetch('/api/repack');
+            if (apiRes.ok) {
+              const apiJson = await apiRes.json();
+              if (apiJson && Array.isArray(apiJson.repack)) {
+                return apiJson.repack as T[];
+              }
+            }
+          } catch (_) {}
+        }
+        return [];
       }
     });
   }
@@ -566,14 +584,15 @@ export class DatabaseRouter {
     customDocId?: string
   ): Promise<T> {
     const sanitizedData = sanitizeData(data);
+    const targetEmpresaId = (!empresaId || empresaId === 'emp_dono') ? 'demo' : empresaId;
     const payload = {
       ...sanitizedData,
-      empresaId: (sanitizedData as any).empresaId || empresaId,
+      empresaId: (sanitizedData as any).empresaId || targetEmpresaId,
       atualizadoEm: serverTimestamp(),
       criadoEm: (sanitizedData as any).criadoEm || new Date().toISOString()
     };
 
-    let docId = customDocId;
+    let docId = customDocId || (data as any).id || (data as any)._docId;
     if (!docId) {
       try {
         docId = doc(collection(db, collectionName)).id;
@@ -581,28 +600,38 @@ export class DatabaseRouter {
         docId = 'doc_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
       }
     }
+    const strDocId = String(docId);
 
     const createdRecord = {
       ...payload,
-      id: docId,
-      _docId: docId,
+      id: strDocId,
+      _docId: strDocId,
       atualizadoEm: new Date().toISOString()
     } as unknown as T;
 
-    // Atualiza imediatamente a camada de JSON local e invalida/atualiza o cache (resposta instantânea)
-    await upsertJsonRecord(empresaId, collectionName, createdRecord);
-    await invalidateHybridCache(`col:${empresaId}:${collectionName}`);
-
-    // Persiste no Firestore com proteção de timeout (1.5s) para nunca travar a UI do usuário
+    // 1. Persiste no Firestore diretamente no banco de dados
     try {
-      const docRef = doc(db, collectionName, docId);
-      const firestorePromise = setDoc(docRef, payload, { merge: true });
-      await Promise.race([
-        firestorePromise,
-        new Promise(resolve => setTimeout(resolve, 1500))
-      ]);
+      const docRef = doc(db, collectionName, strDocId);
+      await setDoc(docRef, { ...payload, id: strDocId, _docId: strDocId }, { merge: true });
     } catch (e) {
       console.warn(`[DatabaseRouter] Persistência em background em ${collectionName}:`, e);
+    }
+
+    // 2. Atualiza imediatamente o JSON Database e invalida cache (resposta instantânea)
+    try {
+      await upsertJsonRecord(targetEmpresaId, collectionName, createdRecord as any);
+      await invalidateHybridCache(`col:${targetEmpresaId}:${collectionName}`);
+    } catch (_) {}
+
+    // 3. Se for repack, sincroniza também com a API de banco do servidor
+    if (collectionName === 'repack' && typeof window !== 'undefined') {
+      try {
+        fetch('/api/repack', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ row: createdRecord, empresaId: targetEmpresaId })
+        }).catch(() => {});
+      } catch (_) {}
     }
 
     return createdRecord;
@@ -619,23 +648,24 @@ export class DatabaseRouter {
   ): Promise<void> {
     if (!docId) return;
     const strDocId = String(docId);
+    const targetEmpresaId = (!empresaId || empresaId === 'emp_dono') ? 'demo' : empresaId;
 
     const sanitizedData = sanitizeData(partialData);
     const payload = {
       ...sanitizedData,
-      empresaId: (sanitizedData as any).empresaId || empresaId || 'demo',
+      empresaId: (sanitizedData as any).empresaId || targetEmpresaId,
       atualizadoEm: serverTimestamp()
     };
 
     // Atualiza imediatamente o JSON Database e invalida cache (resposta instantânea)
-    await upsertJsonRecord(empresaId, collectionName, {
+    await upsertJsonRecord(targetEmpresaId, collectionName, {
       ...sanitizedData,
       id: docId,
       _docId: docId,
       atualizadoEm: new Date().toISOString()
     } as any);
 
-    await invalidateHybridCache(`col:${empresaId}:${collectionName}`);
+    await invalidateHybridCache(`col:${targetEmpresaId}:${collectionName}`);
 
     // Persiste no Firestore com proteção de timeout (1.5s)
     try {
@@ -650,6 +680,16 @@ export class DatabaseRouter {
     } catch (e) {
       console.warn(`[DatabaseRouter] Atualização remota do doc ${strDocId} no Firestore:`, e);
     }
+
+    if (collectionName === 'repack' && typeof window !== 'undefined') {
+      try {
+        fetch('/api/repack', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ row: { id: strDocId, _docId: strDocId, ...payload }, empresaId: targetEmpresaId })
+        }).catch(() => {});
+      } catch (_) {}
+    }
   }
 
   /**
@@ -662,10 +702,11 @@ export class DatabaseRouter {
   ): Promise<void> {
     if (!docId) return;
     const strDocId = String(docId);
+    const targetEmpresaId = (!empresaId || empresaId === 'emp_dono') ? 'demo' : empresaId;
 
     // Remove imediatamente do JSON local e invalida cache
-    await deleteJsonRecord(empresaId, collectionName, strDocId);
-    await invalidateHybridCache(`col:${empresaId}:${collectionName}`);
+    await deleteJsonRecord(targetEmpresaId, collectionName, strDocId);
+    await invalidateHybridCache(`col:${targetEmpresaId}:${collectionName}`);
 
     // Remove do Firestore com proteção de timeout (1.5s)
     try {
@@ -676,6 +717,12 @@ export class DatabaseRouter {
       ]);
     } catch (e) {
       console.warn(`[DatabaseRouter] Erro ao deletar doc ${strDocId} no Firestore:`, e);
+    }
+
+    if (collectionName === 'repack' && typeof window !== 'undefined') {
+      try {
+        fetch(`/api/repack/${strDocId}`, { method: 'DELETE' }).catch(() => {});
+      } catch (_) {}
     }
   }
 
@@ -741,24 +788,7 @@ export class DatabaseRouter {
     callback: (data: T[]) => void,
     onError?: (error: any) => void
   ): () => void {
-    const cacheKey = `col:${empresaId}:${collectionName}`;
-
-    // 1. Emissão imediata do Cache / JSON local
-    getHybridCacheCollection<T>(cacheKey, true).then(cached => {
-      if (cached && cached.data && cached.data.length > 0) {
-        callback(cached.data);
-      } else {
-        getJsonTable<T>(empresaId, collectionName).then(jsonRecs => {
-          if (jsonRecs.length > 0) callback(jsonRecs);
-        });
-      }
-    });
-
-    // 2. Inicia Listener no Firestore APENAS se realtime for necessário pela classificação
-    if (!isRealtimePermitido(collectionName)) {
-      // Para histórico, relatórios, cadastros estáticos e dados diários: NÃO conecta onSnapshot!
-      return () => {};
-    }
+    // Consulta direta e inscrição em tempo real no banco de dados Firestore (sem cache)
 
     // 3. Listener Pooling: se já houver um listener ativo para esta coleção + empresa, reutiliza!
     const listenerKey = `sub:${empresaId}:${collectionName}`;
@@ -821,7 +851,6 @@ export class DatabaseRouter {
           }
         });
 
-        setHybridCacheCollection(cacheKey, docs).catch(() => {});
         saveJsonTable(empresaId, collectionName, docs).catch(() => {});
       },
       (error) => {
