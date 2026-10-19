@@ -248,41 +248,76 @@ export default function PickingDashboard({ user, empresa, onBack, theme = 'dark'
     return actualTasks;
   }, [actualTasks]);
 
-  // Synchronize tasks from empresaData or cache + filter expired open tasks (> 5h) + deduplicate
-  useEffect(() => {
-    let rows: Tarefa[] = [];
-    if (empresaData.tarefas && empresaData.tarefas.length > 0) {
-      rows = [...empresaData.tarefas];
-    } else {
-      const savedTasks = localStorage.getItem(`tasks_${empresaId}`);
-      if (savedTasks) {
-        try { rows = JSON.parse(savedTasks); } catch (e) {}
-      }
-    }
+  // Synchronize tasks from empresaData + local cache + historical tasks YTD + filter expired open tasks (> 5h) + deduplicate
+  const syncAndMergeTasks = React.useCallback(() => {
+    let localSaved: Tarefa[] = [];
+    try {
+      const savedTasks = localStorage.getItem(`tasks_${empresaId}`) || localStorage.getItem(`tarefas_rows_${empresaId}`);
+      if (savedTasks) localSaved = JSON.parse(savedTasks);
+    } catch (e) {}
 
-    if (rows.length < 4500 || rows.some(t => isCleaningProduct(t.descricao))) {
-      // Auto-populate historical tasks (02/01/2026 to 28/08/2026) based on Curva ABC and user outbound spreadsheet
-      const generated = generateHistoricalTasksYTD(empresaId);
-      rows = generated;
-      localStorage.setItem(`tasks_${empresaId}`, JSON.stringify(generated));
-      localStorage.setItem(`tarefas_rows_${empresaId}`, JSON.stringify(generated));
-      localStorage.setItem(`hybrid_col:${empresaId}:tarefas`, JSON.stringify(generated));
-      localStorage.setItem('tasks_all', JSON.stringify(generated));
-    }
+    const realTasks = [
+      ...(empresaData.tarefas || []),
+      ...(Array.isArray(localSaved) ? localSaved : [])
+    ];
+    const cleanReal = realTasks.filter(t => !isCleaningProduct(t.descricao));
 
-    if (rows.length > 0) {
-      const deduped = deduplicateTasks(rows);
-      const { activeTasks, expiredTasks } = filterExpiredOpenTasks(deduped, 5);
-      if (expiredTasks.length > 0 || deduped.length !== rows.length) {
-        purgeExpiredOpenTasks(empresaId, rows, 5);
+    // Full unified YTD historical tasks (02/01/2026 to 28/08/2026) for comprehensive analytical KPIs
+    const generated = generateHistoricalTasksYTD(empresaId);
+    
+    // Real tasks dispatched by conferente and completed by operador take precedence
+    const combined = deduplicateTasks([...cleanReal, ...generated]);
+
+    if (combined.length > 0) {
+      const { activeTasks, expiredTasks } = filterExpiredOpenTasks(combined, 5);
+      if (expiredTasks.length > 0) {
+        purgeExpiredOpenTasks(empresaId, combined, 5);
       }
       activeTasks.sort((a, b) => (b.criadoEm || '').localeCompare(a.criadoEm || ''));
       setActualTasks(activeTasks);
+      
+      // Update cache with merged dataset so other views stay in sync
+      try {
+        localStorage.setItem(`tasks_${empresaId}`, JSON.stringify(activeTasks));
+        localStorage.setItem(`tarefas_rows_${empresaId}`, JSON.stringify(activeTasks));
+        localStorage.setItem(`hybrid_col:${empresaId}:tarefas`, JSON.stringify(activeTasks));
+        localStorage.setItem('tasks_all', JSON.stringify(activeTasks));
+      } catch (e) {}
     } else {
       setActualTasks([]);
     }
     setLoading(false);
   }, [empresaData.tarefas, empresaId]);
+
+  useEffect(() => {
+    syncAndMergeTasks();
+  }, [syncAndMergeTasks]);
+
+  // Real-time synchronization listeners for local and cross-tab events
+  useEffect(() => {
+    let debounceTimer: any = null;
+    const reloadLiveTasks = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        syncAndMergeTasks();
+      }, 50);
+    };
+
+    window.addEventListener('tasks_updated', reloadLiveTasks);
+    window.addEventListener('tarefas_updated', reloadLiveTasks);
+    window.addEventListener('app_data_updated', reloadLiveTasks);
+    window.addEventListener('local_data_changed', reloadLiveTasks);
+    window.addEventListener('storage', reloadLiveTasks);
+
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      window.removeEventListener('tasks_updated', reloadLiveTasks);
+      window.removeEventListener('tarefas_updated', reloadLiveTasks);
+      window.removeEventListener('app_data_updated', reloadLiveTasks);
+      window.removeEventListener('local_data_changed', reloadLiveTasks);
+      window.removeEventListener('storage', reloadLiveTasks);
+    };
+  }, [syncAndMergeTasks]);
 
   // Handle Preset Dates
   useEffect(() => {

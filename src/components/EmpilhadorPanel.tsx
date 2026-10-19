@@ -892,17 +892,36 @@ export default function EmpilhadorPanel({ user, empresa, theme = 'dark' }: Empil
   const handleStartPickingTask = async (t: Tarefa) => {
     const nowISO = new Date().toISOString();
     const updatedOperador = user.nome || operatorName;
-    if (t._docId) {
-      await TarefasRepository.update(t._docId, {
-        status: 'in_progress',
-        iniciadoEm: nowISO,
-        operador: updatedOperador
-      }, empresaId);
+
+    try {
+      if (t._docId) {
+        await TarefasRepository.update(t._docId, {
+          status: 'in_progress',
+          iniciadoEm: nowISO,
+          operador: updatedOperador
+        }, empresaId);
+      } else {
+        const allRemote = await TarefasRepository.getAll(empresaId);
+        const match = allRemote.find(r => r.id === t.id);
+        if (match && match._docId) {
+          await TarefasRepository.update(match._docId, {
+            status: 'in_progress',
+            iniciadoEm: nowISO,
+            operador: updatedOperador
+          }, empresaId);
+        }
+      }
+    } catch (e) {
+      console.warn('TarefasRepository start notice:', e);
     }
+
     const updated = tasks.map(x => x.id === t.id ? { ...x, status: 'in_progress' as const, iniciadoEm: nowISO, operador: updatedOperador } : x);
     setTasks(updated);
-    localStorage.setItem(`tasks_${empresaId}`, JSON.stringify(updated));
-    localStorage.setItem(`tarefas_rows_${empresaId}`, JSON.stringify(updated));
+    try {
+      localStorage.setItem(`tasks_${empresaId}`, JSON.stringify(updated));
+      localStorage.setItem(`tarefas_rows_${empresaId}`, JSON.stringify(updated));
+      localStorage.setItem('tasks_all', JSON.stringify(updated));
+    } catch (e) {}
 
     window.dispatchEvent(new CustomEvent('app_data_updated'));
     window.dispatchEvent(new CustomEvent('local_data_changed'));
@@ -917,13 +936,26 @@ export default function EmpilhadorPanel({ user, empresa, theme = 'dark' }: Empil
     const duration = Math.max(1, Math.round((new Date(nowISO).getTime() - new Date(t.iniciadoEm || nowISO).getTime()) / 60000));
     const updatedOperador = user.nome || operatorName;
 
-    if (t._docId) {
-      await TarefasRepository.update(t._docId, {
-        status: 'done',
-        finalizadoEm: nowISO,
-        duracaoMin: duration,
-        operador: updatedOperador
-      }, empresaId);
+    try {
+      if (t._docId) {
+        await TarefasRepository.update(t._docId, {
+          status: 'done',
+          finalizadoEm: nowISO,
+          duracaoMin: duration,
+          operador: updatedOperador
+        }, empresaId);
+      } else {
+        const allRemote = await TarefasRepository.getAll(empresaId);
+        const match = allRemote.find(r => r.id === t.id);
+        if (match && match._docId) {
+          await TarefasRepository.update(match._docId, {
+            status: 'done',
+            finalizadoEm: nowISO,
+            duracaoMin: duration,
+            operador: updatedOperador
+          }, empresaId);
+        }
+      }
 
       await registrosRepo.create({
         empresaId,
@@ -940,19 +972,24 @@ export default function EmpilhadorPanel({ user, empresa, theme = 'dark' }: Empil
         enviadoEm: nowISO,
         tipoOperacao: 'Ressuprimento de Picking'
       }, empresaId);
+    } catch (e) {
+      console.warn('TarefasRepository finish notice:', e);
     }
 
     const updated = tasks.map(x => x.id === t.id ? { ...x, status: 'done' as const, finalizadoEm: nowISO, duracaoMin: duration, operador: updatedOperador } : x);
     setTasks(updated);
-    localStorage.setItem(`tasks_${empresaId}`, JSON.stringify(updated));
-    localStorage.setItem(`tarefas_rows_${empresaId}`, JSON.stringify(updated));
+    try {
+      localStorage.setItem(`tasks_${empresaId}`, JSON.stringify(updated));
+      localStorage.setItem(`tarefas_rows_${empresaId}`, JSON.stringify(updated));
+      localStorage.setItem('tasks_all', JSON.stringify(updated));
+    } catch (e) {}
 
     window.dispatchEvent(new CustomEvent('app_data_updated'));
     window.dispatchEvent(new CustomEvent('local_data_changed'));
     window.dispatchEvent(new CustomEvent('tasks_updated'));
     window.dispatchEvent(new CustomEvent('tarefas_updated'));
 
-    triggerToast(`Picking #${t.id} CONCLUÍDO por ${user.nome || operatorName}! Duration: ${duration} min`);
+    triggerToast(`Picking #${t.id} CONCLUÍDO por ${user.nome || operatorName}! Duração: ${duration} min`);
   };
 
   // --- Productivity Metrics for the Logged-in Operator ---

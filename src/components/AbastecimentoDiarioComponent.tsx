@@ -148,14 +148,67 @@ export interface Imported021101File {
 }
 
 export default function AbastecimentoDiarioComponent({ user, empresa, tasks }: AbastecimentoDiarioComponentProps) {
-  // Date State for analysis (default: today)
-  const [selectedAnalysisDate, setSelectedAnalysisDate] = useState<string>(() => {
+  const todayStr = useMemo(() => {
     const today = new Date();
     const y = today.getFullYear();
     const m = String(today.getMonth() + 1).padStart(2, '0');
     const day = String(today.getDate()).padStart(2, '0');
     return `${y}-${m}-${day}`;
+  }, []);
+
+  // Filter completed tasks for today to give instant visual feedback
+  const todayCompletedTasks = useMemo(() => {
+    if (!tasks || !Array.isArray(tasks)) return [];
+    return tasks.filter(t => {
+      const isCompleted = t.status === 'done' || t.status === 'concluida' || t.status === 'finalizada' || t.status === 'completed';
+      if (!isCompleted) return false;
+      const d = t.dataConclusao || (t.rawTask?.finalizadoEm ? String(t.rawTask.finalizadoEm).split('T')[0] : '') || (t.criadoEm ? String(t.criadoEm).split('T')[0] : '');
+      return d === todayStr;
+    });
+  }, [tasks, todayStr]);
+
+  // Date State for analysis (prioritizes today if there are tasks for today, or latest task date)
+  const [selectedAnalysisDate, setSelectedAnalysisDate] = useState<string>(() => {
+    const today = new Date();
+    const y = today.getFullYear();
+    const m = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    const currTodayStr = `${y}-${m}-${day}`;
+
+    if (tasks && tasks.length > 0) {
+      const hasToday = tasks.some(t => {
+        const d = t.dataConclusao || (t.rawTask?.finalizadoEm ? String(t.rawTask.finalizadoEm).split('T')[0] : '') || (t.criadoEm ? String(t.criadoEm).split('T')[0] : '');
+        return d === currTodayStr;
+      });
+      if (hasToday) return currTodayStr;
+
+      const dates = tasks.map(t => {
+        const d = t.dataConclusao || (t.rawTask?.finalizadoEm ? String(t.rawTask.finalizadoEm).split('T')[0] : '') || (t.criadoEm ? String(t.criadoEm).split('T')[0] : '');
+        return d;
+      }).filter(Boolean);
+      if (dates.length > 0) {
+        dates.sort((a, b) => b.localeCompare(a));
+        return dates[0];
+      }
+    }
+    return currTodayStr;
   });
+
+  // Automatically update selectedAnalysisDate if today just received its first completed task
+  useEffect(() => {
+    if (todayCompletedTasks.length > 0 && selectedAnalysisDate !== todayStr) {
+      // If the currently selected date has 0 completed tasks, automatically switch to today
+      const currentSelectedHasTasks = tasks.some(t => {
+        const isCompleted = t.status === 'done' || t.status === 'concluida' || t.status === 'finalizada' || t.status === 'completed';
+        if (!isCompleted) return false;
+        const d = t.dataConclusao || (t.rawTask?.finalizadoEm ? String(t.rawTask.finalizadoEm).split('T')[0] : '') || (t.criadoEm ? String(t.criadoEm).split('T')[0] : '');
+        return d === selectedAnalysisDate;
+      });
+      if (!currentSelectedHasTasks) {
+        setSelectedAnalysisDate(todayStr);
+      }
+    }
+  }, [todayCompletedTasks.length, todayStr, tasks, selectedAnalysisDate]);
 
   // Search & Filter State
   const [searchTerm, setSearchTerm] = useState('');
@@ -246,6 +299,39 @@ export default function AbastecimentoDiarioComponent({ user, empresa, tasks }: A
     });
     return initial;
   });
+
+  // Dynamically enrich productsList with any real SKUs present in tasks that weren't in ABASTECIMENTO_PRODUCTS_DATA
+  useEffect(() => {
+    if (!tasks || tasks.length === 0) return;
+    setProductsList(prev => {
+      const existing = new Set(prev.map(p => p.sku));
+      const toAdd: BaseSkuData[] = [];
+      tasks.forEach(t => {
+        const rawSku = Number(t.codigo || t.sku || 0);
+        if (rawSku > 0 && !existing.has(rawSku) && !isCleaningProduct(t.descricao || '')) {
+          existing.add(rawSku);
+          const official = getOfficialProductInfo(rawSku, t.descricao || `Produto ${rawSku}`);
+          toAdd.push({
+            sku: rawSku,
+            descricao: official.descricao || t.descricao || `Produto ${rawSku}`,
+            unidade: 'cx',
+            embalagem: official.embalagem || 12,
+            qtdPallet: official.qtdPallet || 100,
+            estoqueInicialCaixas: 0,
+            estoquePicking: 0,
+            estoqueCentral: 0,
+            estoqueMarketplace: 0,
+            estoquePulmao: 0,
+            estoqueContingencia: 0,
+            vendaCaixas: 0,
+            curvaAbc: (official.curvaAbc as any) || 'B'
+          });
+        }
+      });
+      if (toAdd.length > 0) return [...prev, ...toAdd];
+      return prev;
+    });
+  }, [tasks]);
 
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type });
@@ -524,14 +610,18 @@ export default function AbastecimentoDiarioComponent({ user, empresa, tasks }: A
 
       if (isNaN(hour) || hour < 0 || hour > 23) hour = 10;
 
-      // Map generated task SKU to real Ambev SKU if it's from mock generator (codes 20000+)
+      // Map task SKU to product: check direct SKU first, only fallback for mock generator IDs
       let targetSku = Number(t.sku || t.codigo || 0);
-      if (targetSku >= 20000) {
-        const idx = (targetSku - 20000) % ABASTECIMENTO_PRODUCTS_DATA.length;
-        targetSku = ABASTECIMENTO_PRODUCTS_DATA[idx].sku;
-      }
-
       let entry = map.get(targetSku);
+
+      if (!entry && targetSku >= 20000) {
+        const idx = (targetSku - 20000) % ABASTECIMENTO_PRODUCTS_DATA.length;
+        const candidateSku = ABASTECIMENTO_PRODUCTS_DATA[idx]?.sku;
+        if (candidateSku && map.has(candidateSku)) {
+          targetSku = candidateSku;
+          entry = map.get(targetSku);
+        }
+      }
 
       // Fallback matching by description if direct SKU match wasn't found
       if (!entry) {
@@ -547,6 +637,18 @@ export default function AbastecimentoDiarioComponent({ user, empresa, tasks }: A
             }
           }
         }
+      }
+
+      // Dynamic entry for valid SKU not yet in map
+      if (!entry && targetSku > 0) {
+        entry = {
+          boxes: 0,
+          pallets: 0,
+          operators: new Set<string>(),
+          hourlyCounts: {},
+          hourlyBoxes: {}
+        };
+        map.set(targetSku, entry);
       }
 
       if (entry) {
@@ -2337,6 +2439,31 @@ export default function AbastecimentoDiarioComponent({ user, empresa, tasks }: A
             Excel Noturno
           </button>
 
+          {/* Quick "Hoje" Selector Button */}
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedAnalysisDate(todayStr);
+              setActivePanel('analise');
+            }}
+            className={`px-2.5 py-1 rounded-lg text-[10px] font-sans font-black uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer border ${
+              selectedAnalysisDate === todayStr 
+                ? 'bg-emerald-600 text-white border-emerald-500 shadow-xs' 
+                : 'bg-white text-slate-700 hover:bg-slate-100 border-slate-300'
+            }`}
+            title="Ir para a data atual de operação (Hoje)"
+          >
+            <span className={`w-2 h-2 rounded-full ${selectedAnalysisDate === todayStr ? 'bg-white animate-pulse' : 'bg-emerald-500'}`} />
+            <span>Hoje</span>
+            {todayCompletedTasks.length > 0 && (
+              <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-mono font-bold ${
+                selectedAnalysisDate === todayStr ? 'bg-emerald-800 text-emerald-100' : 'bg-emerald-100 text-emerald-800'
+              }`}>
+                {todayCompletedTasks.length} {todayCompletedTasks.length === 1 ? 'tarefa' : 'tarefas'}
+              </span>
+            )}
+          </button>
+
           {/* Date Selector Quick Integration */}
           <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200">
             <Calendar className="w-3.5 h-3.5 text-slate-500 ml-1.5" />
@@ -3347,103 +3474,105 @@ export default function AbastecimentoDiarioComponent({ user, empresa, tasks }: A
             
             {/* ANÁLISE DE MONTAGEM DE CARGA: PICKING vs CENTRAL vs MARKETPLACE vs REABASTECIMENTO */}
             <div className="p-4 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 border border-slate-800 rounded-2xl text-white shadow-md">
-              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                <div className="flex items-start gap-3">
-                  <div className="p-3 bg-amber-500 text-slate-950 rounded-xl shadow font-black shrink-0">
-                    <Layers className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h4 className="text-sm font-black uppercase tracking-wider text-amber-400">
-                        Análise de Montagem: Picking x Central x Marketplace
-                      </h4>
-                      <span className="px-2 py-0.5 bg-amber-400/20 text-amber-300 font-mono text-[9px] font-black rounded-full uppercase border border-amber-400/30">
-                        {montagemTotals.totalSkusComVenda} SKUs com Saída
-                      </span>
+              <div className="flex flex-col gap-4">
+                <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
+                  <div className="flex items-start gap-3">
+                    <div className="p-3 bg-amber-500 text-slate-950 rounded-xl shadow font-black shrink-0">
+                      <Layers className="w-6 h-6" />
                     </div>
-                    <p className="text-[11px] text-slate-300 font-normal mt-0.5">
-                      Diagnóstico logístico: paletes fechados carregam direto do Central (Área 1) ou Marketplace (Área 3), fracionados saem do Picking (Área 2).
-                    </p>
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h4 className="text-sm font-black uppercase tracking-wider text-amber-400">
+                          Análise de Montagem: Picking x Central x Marketplace
+                        </h4>
+                        <span className="px-2 py-0.5 bg-amber-400/20 text-amber-300 font-mono text-[9px] font-black rounded-full uppercase border border-amber-400/30">
+                          {montagemTotals.totalSkusComVenda} SKUs com Saída
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-300 font-normal mt-0.5">
+                        Diagnóstico logístico: paletes fechados carregam direto do Central (Área 1) ou Marketplace (Área 3), fracionados saem do Picking (Área 2).
+                      </p>
+                    </div>
                   </div>
                 </div>
 
                 {/* 6 Symmetrical Action Filter Cards for All 5 Supply Areas */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 shrink-0">
+                <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2.5 w-full">
                   <button
                     onClick={() => setStatusFilter(statusFilter === 'suficiente_picking' ? 'all' : 'suficiente_picking')}
-                    className={`p-2 rounded-xl border text-left transition-all cursor-pointer ${
+                    className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
                       statusFilter === 'suficiente_picking'
                         ? 'bg-emerald-500/25 border-emerald-400 text-emerald-200 ring-2 ring-emerald-400'
-                        : 'bg-slate-800/60 border-slate-700/80 text-slate-300 hover:bg-slate-800'
+                        : 'bg-slate-800/80 border-slate-700 text-slate-300 hover:bg-slate-800'
                     }`}
                   >
                     <span className="text-[9px] font-black uppercase tracking-wider text-emerald-400 block truncate">🟢 Picking OK</span>
-                    <span className="text-xs font-mono font-black text-emerald-300 block mt-0.5">{montagemTotals.skusSuficientes} SKUs</span>
+                    <span className="text-xs font-mono font-black text-emerald-300 block mt-1">{montagemTotals.skusSuficientes} SKUs</span>
                     <p className="text-[8px] text-slate-400 mt-0.5 truncate">Cobre direto</p>
                   </button>
 
                   <button
                     onClick={() => setStatusFilter(statusFilter === 'carregar_pulmao' ? 'all' : 'carregar_pulmao')}
-                    className={`p-2 rounded-xl border text-left transition-all cursor-pointer ${
+                    className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
                       statusFilter === 'carregar_pulmao'
                         ? 'bg-purple-500/25 border-purple-400 text-purple-200 ring-2 ring-purple-400'
-                        : 'bg-slate-800/60 border-slate-700/80 text-slate-300 hover:bg-slate-800'
+                        : 'bg-slate-800/80 border-slate-700 text-slate-300 hover:bg-slate-800'
                     }`}
                   >
                     <span className="text-[9px] font-black uppercase tracking-wider text-purple-400 block truncate">🟣 Pulmão (4)</span>
-                    <span className="text-xs font-mono font-black text-purple-300 block mt-0.5">{montagemTotals.palletsPulmao} PL</span>
+                    <span className="text-xs font-mono font-black text-purple-300 block mt-1">{montagemTotals.palletsPulmao} PL</span>
                     <p className="text-[8px] text-slate-400 mt-0.5 truncate">{montagemTotals.skusCarregarPulmao} SKUs</p>
                   </button>
 
                   <button
                     onClick={() => setStatusFilter(statusFilter === 'carregar_central' ? 'all' : 'carregar_central')}
-                    className={`p-2 rounded-xl border text-left transition-all cursor-pointer ${
+                    className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
                       statusFilter === 'carregar_central'
                         ? 'bg-amber-500/25 border-amber-400 text-amber-200 ring-2 ring-amber-400'
-                        : 'bg-slate-800/60 border-slate-700/80 text-slate-300 hover:bg-slate-800'
+                        : 'bg-slate-800/80 border-slate-700 text-slate-300 hover:bg-slate-800'
                     }`}
                   >
                     <span className="text-[9px] font-black uppercase tracking-wider text-amber-400 block truncate">🟡 Central (1)</span>
-                    <span className="text-xs font-mono font-black text-amber-300 block mt-0.5">{montagemTotals.palletsCentral} PL</span>
+                    <span className="text-xs font-mono font-black text-amber-300 block mt-1">{montagemTotals.palletsCentral} PL</span>
                     <p className="text-[8px] text-slate-400 mt-0.5 truncate">{montagemTotals.skusCarregarCentral} SKUs</p>
                   </button>
 
                   <button
                     onClick={() => setStatusFilter(statusFilter === 'carregar_marketplace' ? 'all' : 'carregar_marketplace')}
-                    className={`p-2 rounded-xl border text-left transition-all cursor-pointer ${
+                    className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
                       statusFilter === 'carregar_marketplace'
                         ? 'bg-orange-500/25 border-orange-400 text-orange-200 ring-2 ring-orange-400'
-                        : 'bg-slate-800/60 border-slate-700/80 text-slate-300 hover:bg-slate-800'
+                        : 'bg-slate-800/80 border-slate-700 text-slate-300 hover:bg-slate-800'
                     }`}
                   >
                     <span className="text-[9px] font-black uppercase tracking-wider text-orange-400 block truncate">🟠 MktPlace (3)</span>
-                    <span className="text-xs font-mono font-black text-orange-300 block mt-0.5">{montagemTotals.palletsMarketplace} PL</span>
+                    <span className="text-xs font-mono font-black text-orange-300 block mt-1">{montagemTotals.palletsMarketplace} PL</span>
                     <p className="text-[8px] text-slate-400 mt-0.5 truncate">{montagemTotals.skusCarregarMarketplace} SKUs</p>
                   </button>
 
                   <button
                     onClick={() => setStatusFilter(statusFilter === 'carregar_contingencia' ? 'all' : 'carregar_contingencia')}
-                    className={`p-2 rounded-xl border text-left transition-all cursor-pointer ${
+                    className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
                       statusFilter === 'carregar_contingencia'
                         ? 'bg-cyan-500/25 border-cyan-400 text-cyan-200 ring-2 ring-cyan-400'
-                        : 'bg-slate-800/60 border-slate-700/80 text-slate-300 hover:bg-slate-800'
+                        : 'bg-slate-800/80 border-slate-700 text-slate-300 hover:bg-slate-800'
                     }`}
                   >
                     <span className="text-[9px] font-black uppercase tracking-wider text-cyan-400 block truncate">🔵 Contingência (5)</span>
-                    <span className="text-xs font-mono font-black text-cyan-300 block mt-0.5">{montagemTotals.palletsContingencia} PL</span>
+                    <span className="text-xs font-mono font-black text-cyan-300 block mt-1">{montagemTotals.palletsContingencia} PL</span>
                     <p className="text-[8px] text-slate-400 mt-0.5 truncate">{montagemTotals.skusCarregarContingencia} SKUs</p>
                   </button>
 
                   <button
                     onClick={() => setStatusFilter(statusFilter === 'reabastecer_picking' ? 'all' : 'reabastecer_picking')}
-                    className={`p-2 rounded-xl border text-left transition-all cursor-pointer ${
+                    className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
                       statusFilter === 'reabastecer_picking'
                         ? 'bg-rose-500/25 border-rose-400 text-rose-200 ring-2 ring-rose-400'
-                        : 'bg-slate-800/60 border-slate-700/80 text-slate-300 hover:bg-slate-800'
+                        : 'bg-slate-800/80 border-slate-700 text-slate-300 hover:bg-slate-800'
                     }`}
                   >
                     <span className="text-[9px] font-black uppercase tracking-wider text-rose-400 block truncate">🔴 Reabastecer</span>
-                    <span className="text-xs font-mono font-black text-rose-300 block mt-0.5">
+                    <span className="text-xs font-mono font-black text-rose-300 block mt-1">
                       {montagemTotals.palletsReabastecer} PL ({montagemTotals.caixasReabastecer.toLocaleString()} cx)
                     </span>
                     <p className="text-[8px] text-slate-400 mt-0.5 truncate">{montagemTotals.skusReabastecer} SKUs déficit</p>

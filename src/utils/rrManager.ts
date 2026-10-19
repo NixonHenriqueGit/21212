@@ -1,5 +1,6 @@
 import { Tarefa } from '../types';
 import { generateHistoricalTasksYTD, isCleaningProduct } from './generateRessuprimentoData';
+import { deduplicateTasks } from './taskExpirationUtils';
 
 const TASKS_STORAGE_PREFIX = 'tasks_';
 const TAREFAS_STORAGE_PREFIX = 'tarefas_rows_';
@@ -34,17 +35,20 @@ export function getStoredTasks(companyId: string = 'demo'): Tarefa[] {
     const saved = localStorage.getItem(`${TASKS_STORAGE_PREFIX}${companyId}`) || 
                   localStorage.getItem(`${TAREFAS_STORAGE_PREFIX}${companyId}`) ||
                   localStorage.getItem('tasks_all');
+    let parsed: Tarefa[] = [];
     if (saved) {
-      const parsed = JSON.parse(saved);
-      // Ensure we have the complete dataset (>= 4500 tasks) without obsolete small caches and no cleaning products
-      if (Array.isArray(parsed) && parsed.length >= 4500) {
-        const hasCleaning = parsed.some(t => isCleaningProduct(t.descricao));
-        if (!hasCleaning) {
-          inMemoryTasksCache.set(companyId, parsed);
-          return parsed;
-        }
-      }
+      try {
+        const p = JSON.parse(saved);
+        if (Array.isArray(p)) parsed = p;
+      } catch (e) {}
     }
+
+    const generated = generateHistoricalTasksYTD(companyId);
+    const sanitizedParsed = parsed.filter(t => !isCleaningProduct(t.descricao));
+    const merged = deduplicateTasks([...sanitizedParsed, ...generated]);
+
+    inMemoryTasksCache.set(companyId, merged);
+    return merged;
   } catch (e) {
     console.error('Error loading tasks:', e);
   }
