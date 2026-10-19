@@ -57,7 +57,6 @@ export default function PadraoOperacionalPanel({
   theme = 'dark' 
 }: PadraoOperacionalPanelProps) {
   const isDark = theme !== 'light';
-  console.log('PadraoOperacionalPanel render:', { user, selectedModule, sopsLength: sops.length, filteredSopsLength: filteredSops.length });
   const isManager = canUserManageSop(user);
   const [sops, setSops] = useState<SopDocument[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
